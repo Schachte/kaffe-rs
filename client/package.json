@@ -1,0 +1,24 @@
+{
+  "name": "client",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "scripts": {
+    "build": "node build.js",
+    "build:watch": "node build.js --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.28",
+    "@types/react-dom": "^18.0.11",
+    "esbuild": "^0.17.19",
+    "typescript": "^5.0.4"
+  }
+}
