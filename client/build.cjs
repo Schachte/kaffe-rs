@@ -14,17 +14,23 @@ esbuild
   })
   .catch(() => process.exit(1));
 
-// Server-side bundle
+const {
+  nodeModulesPolyfillPlugin,
+} = require("esbuild-plugins-node-modules-polyfill");
+
 esbuild
   .build({
     entryPoints: ["src/ssr.tsx"],
     bundle: true,
     outfile: "dist/ssr.js",
-    minify: false,
+    format: "esm",
     platform: "node",
-    target: ["node20"],
-    define: { "process.env.NODE_ENV": '"production"' },
-    format: "cjs",
-    external: ["stream", "path", "fs", "crypto"],
+    target: ["es2020"],
+    // plugins: [nodeModulesPolyfillPlugin()],
+    define: {
+      "process.env.NODE_ENV": '"production"',
+      global: "globalThis",
+    },
+    external: ["react", "react-dom"],
   })
   .catch(() => process.exit(1));

@@ -1,73 +1,82 @@
 use actix_files as fs;
-use actix_web::{get, App, HttpResponse, HttpServer};
-use deno_core::{serde_v8, v8, JsRuntime, RuntimeOptions};
+use actix_web::{get, App, HttpResponse, HttpServer, Result};
+use deno_core::futures::TryFutureExt; // Add this import
+use deno_core::{v8, JsRuntime, PollEventLoopOptions, RuntimeOptions};
 use std::fs as std_fs;
 
-use std::io::Result;
-use std::process::Command;
-
-fn run_node_script(script_path: &str) -> Result<String> {
-    let output = Command::new("node").arg(script_path).output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Node.js script exited with error: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ))
-    }
-}
-
 #[get("/")]
-async fn index() -> HttpResponse {
+async fn index() -> Result<HttpResponse> {
     let mut runtime = JsRuntime::new(RuntimeOptions::default());
 
-    // match run_node_script("client/dist/ssr.js") {
-    //     Ok(output) => println!("Node.js script output: {}", output),
-    //     Err(e) => eprintln!("Error running Node.js script: {}", e),
-    // }
+    // Read the SSR script
+    let ssr_script = std_fs::read_to_string("client/dist/ssr.js").map_err(|e| {
+        eprintln!("Failed to read SSR script: {}", e);
+        actix_web::error::ErrorInternalServerError("Failed to read SSR script")
+    })?;
 
-    // Read the bundled SSR script
-    let ssr_script = std_fs::read_to_string("client/dist/ssr.js").unwrap();
-    println!("{}", &ssr_script);
-    let ssr_script_static = Box::leak(ssr_script.into_boxed_str());
-    let output: serde_json::Value = eval(&mut runtime, ssr_script_static).expect("Eval failed");
-    println!("{}", output);
+    // Wrap the script in an async IIFE
+    let wrapped_script = format!(
+        r#"
+    globalThis.ssrResult = await (async () => {{
+        const {{default: ssr}} = await import('data:text/javascript;base64,{}');
+        return ssr;
+    }})();
+    "#,
+        base64::encode(&ssr_script)
+    );
+
+    println!("{}", wrapped_script);
+
+    // Execute the SSR script
+    runtime
+        .execute_script("<anon>", wrapped_script)
+        .map_err(|e| {
+            eprintln!("Failed to execute SSR script: {}", e);
+            actix_web::error::ErrorInternalServerError("Failed to execute SSR script")
+        })?;
+
+    // Run the event loop
+    runtime
+        .run_event_loop(PollEventLoopOptions::default())
+        .await
+        .map_err(|e| {
+            eprintln!("Error in event loop: {}", e);
+            actix_web::error::ErrorInternalServerError("Error in event loop")
+        })?;
+
+    // Retrieve the SSR result from the global scope
+    let result = runtime
+        .execute_script("<anon>", "globalThis.ssrResult")
+        .map_err(|e| {
+            eprintln!("Failed to get SSR result: {}", e);
+            actix_web::error::ErrorInternalServerError("Failed to get SSR result")
+        })?;
+
+    let scope = &mut runtime.handle_scope();
+    let local = v8::Local::new(scope, result);
+    let result_string = local.to_string(scope).unwrap().to_rust_string_lossy(scope);
+
+    println!("Rendered HTML: {}", result_string);
+
+    // Construct the full HTML response
     let html = format!(
         r#"
-    <!DOCTYPE html>
-    <html>
-        <body>
-            <div id="root">{}</div>
-            <script src="/static/bundle.js"></script>
-        </body>
-    </html>
-    "#,
-        output
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>React SSR with Rust</title>
+            </head>
+            <body>
+                <div id="root">{}</div>
+                <script src="/static/bundle.js"></script>
+            </body>
+        </html>
+        "#,
+        result_string
     );
-    HttpResponse::Ok().content_type("text/html").body(html)
-}
 
-fn eval(context: &mut JsRuntime, code: &'static str) -> Result<serde_json::Value, String> {
-    let res = context.execute_script("<anon>", code);
-    match res {
-        Ok(global) => {
-            let scope = &mut context.handle_scope();
-            let local = v8::Local::new(scope, global);
-            // Deserialize a `v8` object into a Rust type using `serde_v8`,
-            // in this case deserialize to a JSON `Value`.
-            let deserialized_value = serde_v8::from_v8::<serde_json::Value>(scope, local);
-            match deserialized_value {
-                Ok(value) => Ok(value),
-                Err(err) => Err(format!("Cannot deserialize value: {err:?}")),
-            }
-        }
-        Err(err) => Err(format!("Evaling error: {err:?}")),
-    }
+    // Return the result as an HTTP response
+    Ok(HttpResponse::Ok().content_type("text/html").body(html))
 }
 
 #[actix_web::main]
@@ -81,31 +90,3 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
-
-// use std::io::Result;
-// use std::process::Command;
-
-// fn run_node_script(script_path: &str) -> Result<String> {
-//     let output = Command::new("node").arg(script_path).output()?;
-
-//     if output.status.success() {
-//         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-//     } else {
-//         Err(std::io::Error::new(
-//             std::io::ErrorKind::Other,
-//             format!(
-//                 "Node.js script exited with error: {}",
-//                 String::from_utf8_lossy(&output.stderr)
-//             ),
-//         ))
-//     }
-// }
-
-// // Example usage
-// fn main() -> Result<()> {
-//     match run_node_script("path/to/your/script.js") {
-//         Ok(output) => println!("Node.js script output: {}", output),
-//         Err(e) => eprintln!("Error running Node.js script: {}", e),
-//     }
-//     Ok(())
-// }
