@@ -1,11 +1,10 @@
 {
   "name": "client",
   "version": "1.0.0",
-  "type": "module",
   "description": "",
   "scripts": {
-    "build": "node build.js",
-    "build:watch": "node build.js --watch",
+    "build": "node build.cjs",
+    "build:watch": "node build.cjs --watch",
     "type-check": "tsc --noEmit"
   },
   "keywords": [],

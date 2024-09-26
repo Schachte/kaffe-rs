@@ -1,5 +1,4 @@
-// const esbuild = require("esbuild");
-import esbuild from "esbuild";
+const esbuild = require("esbuild");
 
 // Client-side bundle
 esbuild
@@ -21,11 +20,11 @@ esbuild
     entryPoints: ["src/ssr.tsx"],
     bundle: true,
     outfile: "dist/ssr.js",
-    minify: true,
+    minify: false,
     platform: "node",
-    target: ["es2015"],
+    target: ["node20"],
     define: { "process.env.NODE_ENV": '"production"' },
-    format: "esm",
-    external: ["stream"], // Add this line to exclude the "stream" module from bundling
+    format: "cjs",
+    external: ["stream", "path", "fs", "crypto"],
   })
   .catch(() => process.exit(1));
