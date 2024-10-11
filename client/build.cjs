@@ -1,4 +1,5 @@
 const esbuild = require("esbuild");
+const path = require("path");
 
 // Client-side bundle
 esbuild
@@ -14,10 +15,6 @@ esbuild
   })
   .catch(() => process.exit(1));
 
-const {
-  nodeModulesPolyfillPlugin,
-} = require("esbuild-plugins-node-modules-polyfill");
-
 esbuild
   .build({
     entryPoints: ["src/ssr.tsx"],
@@ -26,7 +23,6 @@ esbuild
     format: "esm",
     platform: "node",
     target: ["es2020"],
-    // plugins: [nodeModulesPolyfillPlugin()],
     define: {
       "process.env.NODE_ENV": '"production"',
       global: "globalThis",
