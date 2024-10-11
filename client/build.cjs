@@ -21,12 +21,10 @@ esbuild
     bundle: true,
     outfile: "dist/ssr.js",
     format: "esm",
-    platform: "node",
     target: ["es2020"],
     define: {
       "process.env.NODE_ENV": '"production"',
       global: "globalThis",
     },
-    external: ["react", "react-dom"],
   })
   .catch(() => process.exit(1));

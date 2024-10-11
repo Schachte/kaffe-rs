@@ -31,11 +31,439 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// node_modules/fast-text-encoding/text.min.js
+var require_text_min = __commonJS({
+  "node_modules/fast-text-encoding/text.min.js"(exports) {
+    (function(scope) {
+      "use strict";
+      function B(r, e) {
+        var f;
+        return r instanceof Buffer ? f = r : f = Buffer.from(r.buffer, r.byteOffset, r.byteLength), f.toString(e);
+      }
+      var w = function(r) {
+        return Buffer.from(r);
+      };
+      function h(r) {
+        for (var e = 0, f = Math.min(256 * 256, r.length + 1), n = new Uint16Array(f), i = [], o = 0; ; ) {
+          var t = e < r.length;
+          if (!t || o >= f - 1) {
+            var s = n.subarray(0, o), m = s;
+            if (i.push(String.fromCharCode.apply(null, m)), !t)
+              return i.join("");
+            r = r.subarray(e), e = 0, o = 0;
+          }
+          var a = r[e++];
+          if ((a & 128) === 0)
+            n[o++] = a;
+          else if ((a & 224) === 192) {
+            var d = r[e++] & 63;
+            n[o++] = (a & 31) << 6 | d;
+          } else if ((a & 240) === 224) {
+            var d = r[e++] & 63, l = r[e++] & 63;
+            n[o++] = (a & 31) << 12 | d << 6 | l;
+          } else if ((a & 248) === 240) {
+            var d = r[e++] & 63, l = r[e++] & 63, R = r[e++] & 63, c = (a & 7) << 18 | d << 12 | l << 6 | R;
+            c > 65535 && (c -= 65536, n[o++] = c >>> 10 & 1023 | 55296, c = 56320 | c & 1023), n[o++] = c;
+          }
+        }
+      }
+      function F(r) {
+        for (var e = 0, f = r.length, n = 0, i = Math.max(32, f + (f >>> 1) + 7), o = new Uint8Array(i >>> 3 << 3); e < f; ) {
+          var t = r.charCodeAt(e++);
+          if (t >= 55296 && t <= 56319) {
+            if (e < f) {
+              var s = r.charCodeAt(e);
+              (s & 64512) === 56320 && (++e, t = ((t & 1023) << 10) + (s & 1023) + 65536);
+            }
+            if (t >= 55296 && t <= 56319)
+              continue;
+          }
+          if (n + 4 > o.length) {
+            i += 8, i *= 1 + e / r.length * 2, i = i >>> 3 << 3;
+            var m = new Uint8Array(i);
+            m.set(o), o = m;
+          }
+          if ((t & 4294967168) === 0) {
+            o[n++] = t;
+            continue;
+          } else if ((t & 4294965248) === 0)
+            o[n++] = t >>> 6 & 31 | 192;
+          else if ((t & 4294901760) === 0)
+            o[n++] = t >>> 12 & 15 | 224, o[n++] = t >>> 6 & 63 | 128;
+          else if ((t & 4292870144) === 0)
+            o[n++] = t >>> 18 & 7 | 240, o[n++] = t >>> 12 & 63 | 128, o[n++] = t >>> 6 & 63 | 128;
+          else
+            continue;
+          o[n++] = t & 63 | 128;
+        }
+        return o.slice ? o.slice(0, n) : o.subarray(0, n);
+      }
+      var u = "Failed to ", p = function(r, e, f) {
+        if (r)
+          throw new Error("".concat(u).concat(e, ": the '").concat(f, "' option is unsupported."));
+      };
+      var x = typeof Buffer == "function" && Buffer.from;
+      var A = x ? w : F;
+      function v() {
+        this.encoding = "utf-8";
+      }
+      v.prototype.encode = function(r, e) {
+        return p(e && e.stream, "encode", "stream"), A(r);
+      };
+      function U(r) {
+        var e;
+        try {
+          var f = new Blob([r], { type: "text/plain;charset=UTF-8" });
+          e = URL.createObjectURL(f);
+          var n = new XMLHttpRequest();
+          return n.open("GET", e, false), n.send(), n.responseText;
+        } finally {
+          e && URL.revokeObjectURL(e);
+        }
+      }
+      var O = !x && typeof Blob == "function" && typeof URL == "function" && typeof URL.createObjectURL == "function", S = ["utf-8", "utf8", "unicode-1-1-utf-8"], T = h;
+      x ? T = B : O && (T = function(r) {
+        try {
+          return U(r);
+        } catch (e) {
+          return h(r);
+        }
+      });
+      var y = "construct 'TextDecoder'", E = "".concat(u, " ").concat(y, ": the ");
+      function g(r, e) {
+        p(e && e.fatal, y, "fatal"), r = r || "utf-8";
+        var f;
+        if (x ? f = Buffer.isEncoding(r) : f = S.indexOf(r.toLowerCase()) !== -1, !f)
+          throw new RangeError("".concat(E, " encoding label provided ('").concat(r, "') is invalid."));
+        this.encoding = r, this.fatal = false, this.ignoreBOM = false;
+      }
+      g.prototype.decode = function(r, e) {
+        p(e && e.stream, "decode", "stream");
+        var f;
+        return r instanceof Uint8Array ? f = r : r.buffer instanceof ArrayBuffer ? f = new Uint8Array(r.buffer) : f = new Uint8Array(r), T(f, this.encoding);
+      };
+      scope.TextEncoder = scope.TextEncoder || v;
+      scope.TextDecoder = scope.TextDecoder || g;
+    })(typeof window !== "undefined" ? window : typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
+// node_modules/react/cjs/react.production.min.js
+var require_react_production_min = __commonJS({
+  "node_modules/react/cjs/react.production.min.js"(exports) {
+    "use strict";
+    var l = Symbol.for("react.element");
+    var n = Symbol.for("react.portal");
+    var p = Symbol.for("react.fragment");
+    var q = Symbol.for("react.strict_mode");
+    var r = Symbol.for("react.profiler");
+    var t = Symbol.for("react.provider");
+    var u = Symbol.for("react.context");
+    var v = Symbol.for("react.forward_ref");
+    var w = Symbol.for("react.suspense");
+    var x = Symbol.for("react.memo");
+    var y = Symbol.for("react.lazy");
+    var z = Symbol.iterator;
+    function A(a) {
+      if (null === a || "object" !== typeof a)
+        return null;
+      a = z && a[z] || a["@@iterator"];
+      return "function" === typeof a ? a : null;
+    }
+    var B = { isMounted: function() {
+      return false;
+    }, enqueueForceUpdate: function() {
+    }, enqueueReplaceState: function() {
+    }, enqueueSetState: function() {
+    } };
+    var C = Object.assign;
+    var D = {};
+    function E(a, b, e) {
+      this.props = a;
+      this.context = b;
+      this.refs = D;
+      this.updater = e || B;
+    }
+    E.prototype.isReactComponent = {};
+    E.prototype.setState = function(a, b) {
+      if ("object" !== typeof a && "function" !== typeof a && null != a)
+        throw Error("setState(...): takes an object of state variables to update or a function which returns an object of state variables.");
+      this.updater.enqueueSetState(this, a, b, "setState");
+    };
+    E.prototype.forceUpdate = function(a) {
+      this.updater.enqueueForceUpdate(this, a, "forceUpdate");
+    };
+    function F() {
+    }
+    F.prototype = E.prototype;
+    function G(a, b, e) {
+      this.props = a;
+      this.context = b;
+      this.refs = D;
+      this.updater = e || B;
+    }
+    var H = G.prototype = new F();
+    H.constructor = G;
+    C(H, E.prototype);
+    H.isPureReactComponent = true;
+    var I = Array.isArray;
+    var J = Object.prototype.hasOwnProperty;
+    var K = { current: null };
+    var L = { key: true, ref: true, __self: true, __source: true };
+    function M(a, b, e) {
+      var d, c = {}, k = null, h = null;
+      if (null != b)
+        for (d in void 0 !== b.ref && (h = b.ref), void 0 !== b.key && (k = "" + b.key), b)
+          J.call(b, d) && !L.hasOwnProperty(d) && (c[d] = b[d]);
+      var g = arguments.length - 2;
+      if (1 === g)
+        c.children = e;
+      else if (1 < g) {
+        for (var f = Array(g), m = 0; m < g; m++)
+          f[m] = arguments[m + 2];
+        c.children = f;
+      }
+      if (a && a.defaultProps)
+        for (d in g = a.defaultProps, g)
+          void 0 === c[d] && (c[d] = g[d]);
+      return { $$typeof: l, type: a, key: k, ref: h, props: c, _owner: K.current };
+    }
+    function N(a, b) {
+      return { $$typeof: l, type: a.type, key: b, ref: a.ref, props: a.props, _owner: a._owner };
+    }
+    function O(a) {
+      return "object" === typeof a && null !== a && a.$$typeof === l;
+    }
+    function escape(a) {
+      var b = { "=": "=0", ":": "=2" };
+      return "$" + a.replace(/[=:]/g, function(a2) {
+        return b[a2];
+      });
+    }
+    var P = /\/+/g;
+    function Q(a, b) {
+      return "object" === typeof a && null !== a && null != a.key ? escape("" + a.key) : b.toString(36);
+    }
+    function R(a, b, e, d, c) {
+      var k = typeof a;
+      if ("undefined" === k || "boolean" === k)
+        a = null;
+      var h = false;
+      if (null === a)
+        h = true;
+      else
+        switch (k) {
+          case "string":
+          case "number":
+            h = true;
+            break;
+          case "object":
+            switch (a.$$typeof) {
+              case l:
+              case n:
+                h = true;
+            }
+        }
+      if (h)
+        return h = a, c = c(h), a = "" === d ? "." + Q(h, 0) : d, I(c) ? (e = "", null != a && (e = a.replace(P, "$&/") + "/"), R(c, b, e, "", function(a2) {
+          return a2;
+        })) : null != c && (O(c) && (c = N(c, e + (!c.key || h && h.key === c.key ? "" : ("" + c.key).replace(P, "$&/") + "/") + a)), b.push(c)), 1;
+      h = 0;
+      d = "" === d ? "." : d + ":";
+      if (I(a))
+        for (var g = 0; g < a.length; g++) {
+          k = a[g];
+          var f = d + Q(k, g);
+          h += R(k, b, e, f, c);
+        }
+      else if (f = A(a), "function" === typeof f)
+        for (a = f.call(a), g = 0; !(k = a.next()).done; )
+          k = k.value, f = d + Q(k, g++), h += R(k, b, e, f, c);
+      else if ("object" === k)
+        throw b = String(a), Error("Objects are not valid as a React child (found: " + ("[object Object]" === b ? "object with keys {" + Object.keys(a).join(", ") + "}" : b) + "). If you meant to render a collection of children, use an array instead.");
+      return h;
+    }
+    function S(a, b, e) {
+      if (null == a)
+        return a;
+      var d = [], c = 0;
+      R(a, d, "", "", function(a2) {
+        return b.call(e, a2, c++);
+      });
+      return d;
+    }
+    function T(a) {
+      if (-1 === a._status) {
+        var b = a._result;
+        b = b();
+        b.then(function(b2) {
+          if (0 === a._status || -1 === a._status)
+            a._status = 1, a._result = b2;
+        }, function(b2) {
+          if (0 === a._status || -1 === a._status)
+            a._status = 2, a._result = b2;
+        });
+        -1 === a._status && (a._status = 0, a._result = b);
+      }
+      if (1 === a._status)
+        return a._result.default;
+      throw a._result;
+    }
+    var U = { current: null };
+    var V = { transition: null };
+    var W = { ReactCurrentDispatcher: U, ReactCurrentBatchConfig: V, ReactCurrentOwner: K };
+    function X() {
+      throw Error("act(...) is not supported in production builds of React.");
+    }
+    exports.Children = { map: S, forEach: function(a, b, e) {
+      S(a, function() {
+        b.apply(this, arguments);
+      }, e);
+    }, count: function(a) {
+      var b = 0;
+      S(a, function() {
+        b++;
+      });
+      return b;
+    }, toArray: function(a) {
+      return S(a, function(a2) {
+        return a2;
+      }) || [];
+    }, only: function(a) {
+      if (!O(a))
+        throw Error("React.Children.only expected to receive a single React element child.");
+      return a;
+    } };
+    exports.Component = E;
+    exports.Fragment = p;
+    exports.Profiler = r;
+    exports.PureComponent = G;
+    exports.StrictMode = q;
+    exports.Suspense = w;
+    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = W;
+    exports.act = X;
+    exports.cloneElement = function(a, b, e) {
+      if (null === a || void 0 === a)
+        throw Error("React.cloneElement(...): The argument must be a React element, but you passed " + a + ".");
+      var d = C({}, a.props), c = a.key, k = a.ref, h = a._owner;
+      if (null != b) {
+        void 0 !== b.ref && (k = b.ref, h = K.current);
+        void 0 !== b.key && (c = "" + b.key);
+        if (a.type && a.type.defaultProps)
+          var g = a.type.defaultProps;
+        for (f in b)
+          J.call(b, f) && !L.hasOwnProperty(f) && (d[f] = void 0 === b[f] && void 0 !== g ? g[f] : b[f]);
+      }
+      var f = arguments.length - 2;
+      if (1 === f)
+        d.children = e;
+      else if (1 < f) {
+        g = Array(f);
+        for (var m = 0; m < f; m++)
+          g[m] = arguments[m + 2];
+        d.children = g;
+      }
+      return { $$typeof: l, type: a.type, key: c, ref: k, props: d, _owner: h };
+    };
+    exports.createContext = function(a) {
+      a = { $$typeof: u, _currentValue: a, _currentValue2: a, _threadCount: 0, Provider: null, Consumer: null, _defaultValue: null, _globalName: null };
+      a.Provider = { $$typeof: t, _context: a };
+      return a.Consumer = a;
+    };
+    exports.createElement = M;
+    exports.createFactory = function(a) {
+      var b = M.bind(null, a);
+      b.type = a;
+      return b;
+    };
+    exports.createRef = function() {
+      return { current: null };
+    };
+    exports.forwardRef = function(a) {
+      return { $$typeof: v, render: a };
+    };
+    exports.isValidElement = O;
+    exports.lazy = function(a) {
+      return { $$typeof: y, _payload: { _status: -1, _result: a }, _init: T };
+    };
+    exports.memo = function(a, b) {
+      return { $$typeof: x, type: a, compare: void 0 === b ? null : b };
+    };
+    exports.startTransition = function(a) {
+      var b = V.transition;
+      V.transition = {};
+      try {
+        a();
+      } finally {
+        V.transition = b;
+      }
+    };
+    exports.unstable_act = X;
+    exports.useCallback = function(a, b) {
+      return U.current.useCallback(a, b);
+    };
+    exports.useContext = function(a) {
+      return U.current.useContext(a);
+    };
+    exports.useDebugValue = function() {
+    };
+    exports.useDeferredValue = function(a) {
+      return U.current.useDeferredValue(a);
+    };
+    exports.useEffect = function(a, b) {
+      return U.current.useEffect(a, b);
+    };
+    exports.useId = function() {
+      return U.current.useId();
+    };
+    exports.useImperativeHandle = function(a, b, e) {
+      return U.current.useImperativeHandle(a, b, e);
+    };
+    exports.useInsertionEffect = function(a, b) {
+      return U.current.useInsertionEffect(a, b);
+    };
+    exports.useLayoutEffect = function(a, b) {
+      return U.current.useLayoutEffect(a, b);
+    };
+    exports.useMemo = function(a, b) {
+      return U.current.useMemo(a, b);
+    };
+    exports.useReducer = function(a, b, e) {
+      return U.current.useReducer(a, b, e);
+    };
+    exports.useRef = function(a) {
+      return U.current.useRef(a);
+    };
+    exports.useState = function(a) {
+      return U.current.useState(a);
+    };
+    exports.useSyncExternalStore = function(a, b, e) {
+      return U.current.useSyncExternalStore(a, b, e);
+    };
+    exports.useTransition = function() {
+      return U.current.useTransition();
+    };
+    exports.version = "18.3.1";
+  }
+});
+
+// node_modules/react/index.js
+var require_react = __commonJS({
+  "node_modules/react/index.js"(exports, module) {
+    "use strict";
+    if (true) {
+      module.exports = require_react_production_min();
+    } else {
+      module.exports = null;
+    }
+  }
+});
+
 // node_modules/react-dom/cjs/react-dom-server-legacy.node.production.min.js
 var require_react_dom_server_legacy_node_production_min = __commonJS({
   "node_modules/react-dom/cjs/react-dom-server-legacy.node.production.min.js"(exports) {
     "use strict";
-    var ea = __require("/Users/schachte/Documents/learn_rust/SSR/ssr/client/node_modules/react");
+    var ea = require_react();
     var fa = __require("stream");
     var n = Object.prototype.hasOwnProperty;
     var ha = /^[:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD][:A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\-.0-9\u00B7\u0300-\u036F\u203F-\u2040]*$/;
@@ -1696,7 +2124,7 @@ var require_react_dom_server_node_production_min = __commonJS({
   "node_modules/react-dom/cjs/react-dom-server.node.production.min.js"(exports) {
     "use strict";
     var aa = __require("util");
-    var ba = __require("/Users/schachte/Documents/learn_rust/SSR/ssr/client/node_modules/react");
+    var ba = require_react();
     var k = null;
     var l = 0;
     var q = true;
@@ -3505,19 +3933,11 @@ var require_server_node = __commonJS({
   }
 });
 
-// node_modules/react-dom/server.js
-var require_server = __commonJS({
-  "node_modules/react-dom/server.js"(exports, module) {
-    "use strict";
-    module.exports = require_server_node();
-  }
-});
-
 // node_modules/react/cjs/react-jsx-runtime.production.min.js
 var require_react_jsx_runtime_production_min = __commonJS({
   "node_modules/react/cjs/react-jsx-runtime.production.min.js"(exports) {
     "use strict";
-    var f = __require("/Users/schachte/Documents/learn_rust/SSR/ssr/client/node_modules/react");
+    var f = require_react();
     var k = Symbol.for("react.element");
     var l = Symbol.for("react.fragment");
     var m = Object.prototype.hasOwnProperty;
@@ -3554,7 +3974,8 @@ var require_jsx_runtime = __commonJS({
 });
 
 // src/ssr.tsx
-var import_server = __toESM(require_server(), 1);
+var import_fast_text_encoding = __toESM(require_text_min(), 1);
+var import_server = __toESM(require_server_node(), 1);
 
 // src/App.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime(), 1);
@@ -3566,9 +3987,19 @@ var App_default = App;
 // src/ssr.tsx
 var import_jsx_runtime2 = __toESM(require_jsx_runtime(), 1);
 var result = import_server.default.renderToString(/* @__PURE__ */ (0, import_jsx_runtime2.jsx)(App_default, {}));
-console.log(result);
 globalThis.ssrResult = result;
 /*! Bundled license information:
+
+react/cjs/react.production.min.js:
+  (**
+   * @license React
+   * react.production.min.js
+   *
+   * Copyright (c) Facebook, Inc. and its affiliates.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   *)
 
 react-dom/cjs/react-dom-server-legacy.node.production.min.js:
   (**
