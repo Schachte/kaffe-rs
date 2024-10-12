@@ -1,3 +1,4 @@
+.vscode
 /target
 client/node_modules/.yarn-integrity
 client/node_modules
