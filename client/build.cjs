@@ -18,29 +18,38 @@ esbuild
   .catch(() => process.exit(1));
 
 // Server-side bundle for V8 environment
-esbuild
-  .build({
-    entryPoints: ["src/server-entry.tsx"],
-    bundle: true,
-    minify: false,
-    outfile: "dist/ssr.js",
-    format: "esm",
-    target: ["es2020"],
-    platform: "neutral",
-    mainFields: ["module", "main"],
-    define: {
-      "process.env.NODE_ENV": '"development"',
-      global: "globalThis",
-      window: "globalThis",
-      self: "globalThis",
-      URL: "globalThis.URL",
-    },
-    plugins: [
-      nodeModulesPolyfillPlugin({
-        modules: ["url", "path", "stream", "util"],
-      }),
-    ],
-    inject: ["./polyfills/URL.js"],
-    external: [],
-  })
-  .catch(() => process.exit(1));
+const watch = process.argv.includes("--watch");
+
+const buildOptions = {
+  entryPoints: ["src/server-entry.tsx"],
+  bundle: true,
+  minify: false,
+  outfile: "dist/ssr.js",
+  format: "esm",
+  target: ["es2020"],
+  platform: "neutral",
+  mainFields: ["module", "main"],
+  define: {
+    "process.env.NODE_ENV": '"development"',
+    global: "globalThis",
+    window: "globalThis",
+    self: "globalThis",
+    URL: "globalThis.URL",
+  },
+  plugins: [
+    nodeModulesPolyfillPlugin({
+      modules: ["url", "path", "stream", "util"],
+    }),
+  ],
+  inject: ["./polyfills/URL.js"],
+  external: [],
+};
+
+if (watch) {
+  esbuild.context(buildOptions).then((context) => {
+    context.watch();
+    console.log("Watching for changes...");
+  });
+} else {
+  esbuild.build(buildOptions).catch(() => process.exit(1));
+}

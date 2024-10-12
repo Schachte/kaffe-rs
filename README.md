@@ -1,6 +1,6 @@
- <center>Experimental POC for doing server side rendering with React in Rust using the V8 core implementation from Deno</center>
+## Background
 
----
+Experimental POC for doing server side rendering with React in Rust using the V8 core implementation from Deno
 
 ### _Motivation:_
 
@@ -17,10 +17,42 @@ The goal is to build out the SSR (server side rendering) component of a larger S
 - Hot module reloading setup
 - Custom Markdown AST generation that supports embedding React components (similar to ReactMDX)
 
----
+## Getting started:
 
-### _Basic setup:_
+1. Initial step is to get some client program setup. I've added a demo inside of `client` which is a basic React site with bundle generation being done via `esbuild`.
+   - Run: `yarn && yarn build`
+   - Bundles will exist in `client/dist/`
+2. Two bundles will get generated, one for the server and one for the client
+   - `bundle.js`
+   - `ssr.js`
+3. Generate a release binary for `Kaffe` by running `cargo build --release`
 
-- `cargo build` to grab the Rust deps
-- `cd client && yarn && yarn build` to grab the clientside deps and output the IIFE bundle (built using esbuild)
-- `cargo run` will kick off the server from which you can invoke something like `curl localhost:8080` to validate proper SSR rendering is taking place
+You can now run the SSR server with Kaffe like so:
+
+```bash
+./target/release/ssr \
+  --client-build-dir ./client/dist \
+  --client-bundle-path ./client/dist/bundle.js \
+  --server-bundle-path ./client/dist/ssr.js \
+  --server-port 8080
+```
+
+```
+Starting Kaffe Server...
+=========================
+Port: 8080
+Client Build Dir: ./client/dist
+Client Bundle: ./client/dist/bundle.js
+Server Bundle: ./client/dist/ssr.js
+=========================
+
+Server is running!
+Local: http://localhost:8080
+Network: http://127.0.0.1:8080
+
+Press Ctrl+C to stop the server
+```
+
+### Automatic compilation
+
+I've added a poor mans version of HMR (hot module reloading), which you can see inside `./dev.sh`. This will auto recompile any of the clientside or backend Rust bundles/binaries when developing.
