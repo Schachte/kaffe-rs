@@ -64,22 +64,6 @@ async fn index(req: HttpRequest) -> impl Responder {
         ..Default::default()
     });
 
-    // TODO: Determine if we'll actually want this psuedo polyfill
-    let _ = &mut js_runtime
-        .execute_script(
-            "process.js",
-            r#"
-        const process = {
-            env: { NODE_ENV: "production" },
-            browser: false,
-            cwd: () => "/",
-            emitWarning: (warning) => console.warn(warning),
-        };
-        globalThis.process = process;
-        "#,
-        )
-        .unwrap();
-
     let path = req.path();
     let file_path = "client/dist/ssr.js";
     run_js(&mut js_runtime, file_path)
