@@ -14,6 +14,9 @@ base64 = "0.22.1"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2.1.0"
 awc = "3.5.1"
+nom = "7.1.3"
+tempfile = "3.13.0"
+esbuild-rs = "0.13.8"
 
 
 [lib]

@@ -1,33 +1,106 @@
-use actix_files as fs;
 use actix_web::{
     get,
     web::{self},
-    App, HttpRequest, HttpResponse, HttpServer, Responder, Result,
+    HttpRequest, HttpResponse, Responder, Result,
 };
-use clap::Parser;
-use colored::Colorize;
 use deno_core::{error::AnyError, v8, JsRuntime};
-use std::{fs::read_to_string, rc::Rc};
+use std::{
+    fs::{read_to_string, File},
+    io::Write,
+    process::Command,
+    rc::Rc,
+};
 
-use kaffe::Kaffe;
+use kaffe::{
+    parser::{parse_markdown, ASTNode, ImportType},
+    Kaffe,
+};
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    #[arg(long, default_value = "client/dist")]
-    client_build_dir: String,
+fn extract_react_components(nodes: &[ASTNode]) -> Vec<String> {
+    nodes
+        .iter()
+        .filter_map(|node| {
+            if let ASTNode::ReactComponent(name) = node {
+                Some(format!("<{} />", name))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
-    #[arg(long, default_value = "bundle.js")]
-    client_bundle_path: String,
+fn extract_imports(nodes: &[ASTNode]) -> Vec<String> {
+    nodes
+        .iter()
+        .filter_map(|node| {
+            if let ASTNode::Import(import_type) = node {
+                match import_type {
+                    ImportType::Named(component, path) => {
+                        Some(format!("import {{ {} }} from \"{}\";", component, path))
+                    }
+                    ImportType::Default(component, path) => {
+                        Some(format!("import {} from \"{}\";", component, path))
+                    }
+                }
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
-    #[arg(long, default_value = "ssr.js")]
-    server_bundle_path: String,
+fn bundle_react_component(markdown_input: &str) -> Result<()> {
+    // Parse the markdown input
+    let parsed_nodes = match parse_markdown(markdown_input) {
+        Ok(nodes) => nodes,
+        Err(e) => return Ok(()),
+    };
 
-    #[arg(long, default_value_t = 8080)]
-    server_port: u16,
+    // Extract React components
+    let react_components = extract_react_components(&parsed_nodes);
 
-    #[arg(long, default_value = "template.html")]
-    html_template_path: String,
+    let imports = extract_imports(&parsed_nodes);
+
+    println!("Parsed nodes: {:?}", parsed_nodes);
+    println!("React components: {:?}", react_components);
+    println!("Imports: {:?}", imports);
+
+    // Join components
+    let components_string = react_components.join(",\n    ");
+    let imports_string = imports.join("\n");
+
+    // Create the content for the server-entry file
+    let server_entry_content = format!(
+        r#"import React from "react";
+        import "fast-text-encoding";
+        import ReactDOMServer from "react-dom/server";
+        {}
+
+        // Expose the renderToString function globally
+        (globalThis as any).renderToString = (location = "/") => {{
+        return ReactDOMServer.renderToString(
+            <React.Fragment>
+            {}
+            </React.Fragment>
+        );
+        }};
+        "#,
+        imports_string, components_string
+    );
+
+    // Write to the server-entry.tsx file
+    let file_path = "client/src/server-entry.tsx";
+    let mut file = File::create(file_path)?;
+    file.write_all(server_entry_content.as_bytes())?;
+
+    // Run the build script
+    let status = Command::new("node").args(&["client/build.cjs"]).status()?;
+
+    if !status.success() {
+        return Ok(());
+    }
+
+    Ok(())
 }
 
 async fn run_js(js_runtime: &mut JsRuntime, file_path: &str) -> Result<usize, AnyError> {
@@ -55,6 +128,15 @@ fn retrieve_rendered_page(
 
 fn load_html_template(file_path: &str) -> std::io::Result<String> {
     read_to_string(file_path)
+}
+
+fn retrieve_rendered_html(js_runtime: &mut JsRuntime) -> Result<String> {
+    let scope = &mut js_runtime.handle_scope();
+    let source = v8::String::new(scope, "renderToString();").unwrap();
+    let script = v8::Script::compile(scope, source, None).unwrap();
+    let result = script.run(scope).unwrap();
+    let result_str = result.to_string(scope).unwrap().to_rust_string_lossy(scope);
+    Ok(result_str)
 }
 
 #[get("/{tail:.*}")]
@@ -87,65 +169,29 @@ async fn index(req: HttpRequest, kaffe: web::Data<Kaffe>) -> impl Responder {
 }
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let args = Args::parse();
-    let server_port = args.server_port;
-    let kaffe = web::Data::new(Kaffe::new(
-        args.client_build_dir,
-        args.client_bundle_path,
-        args.server_bundle_path,
-        args.html_template_path,
-        server_port,
-    ));
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
+        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
+        ..Default::default()
+    });
 
-    print_init_metadata(&kaffe, server_port);
+    // Example markdown input
+    let markdown_input = r#"
+        import Home from "./components/Home";
+        <Home/>
+    "#;
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(kaffe.clone())
-            .service(fs::Files::new("/static", kaffe.client_build_dir.clone()).show_files_listing())
-            .service(index)
-    })
-    .bind(format!("127.0.0.1:{}", server_port))?
-    .run()
-    .await
-}
+    bundle_react_component(&markdown_input)?;
 
-fn print_init_metadata(kaffe: &web::Data<Kaffe>, server_port: u16) {
-    println!("\n{}", "Starting Kaffe Server...".bright_green().bold());
-    println!("{}", "=========================".bright_green());
-    println!("{} {}", "Port:".bright_yellow().bold(), server_port);
-    println!(
-        "{} {}",
-        "Client Build Dir:".bright_yellow().bold(),
-        kaffe.client_build_dir.display()
-    );
-    println!(
-        "{} {}",
-        "Client Bundle:".bright_yellow().bold(),
-        kaffe.client_bundle_path
-    );
-    println!(
-        "{} {}",
-        "Server Bundle:".bright_yellow().bold(),
-        kaffe.server_bundle_path
-    );
-    println!("{}", "=========================".bright_green());
+    match run_js(&mut js_runtime, "dist/ssr.js").await {
+        Ok(_) => println!("JavaScript bundle executed successfully"),
+        Err(e) => println!("Error running JavaScript bundle: {}", e),
+    }
 
-    println!("\n{}", "Server is running!".bright_green().bold());
-    println!(
-        "{} {}",
-        "Local:".bright_yellow().bold(),
-        format!("http://localhost:{}", server_port)
-            .bright_blue()
-            .underline()
-    );
-    println!(
-        "{} {}",
-        "Network:".bright_yellow().bold(),
-        format!("http://127.0.0.1:{}", server_port)
-            .bright_blue()
-            .underline()
-    );
-    println!("\n{}", "Press Ctrl+C to stop the server".bright_cyan());
+    match retrieve_rendered_html(&mut js_runtime) {
+        Ok(html) => println!("Rendered HTML: {}", html),
+        Err(e) => println!("Error retrieving rendered HTML: {}", e),
+    }
+
+    Ok(())
 }
