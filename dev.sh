@@ -1,17 +1,26 @@
 #!/bin/bash
 
-# Function to run esbuild in watch mode
-run_esbuild() {
-    (cd client && yarn build:watch) &
+run_esbuild_and_copy_template() {
+    (
+        cd client
+        yarn build:watch &
+        
+        cp template.html dist/template.html
+        
+        while inotifywait -e modify template.html; do
+            cp template.html dist/template.html
+            echo "HTML template updated"
+        done
+    ) &
 }
 
-run_esbuild
+run_esbuild_and_copy_template
 
-# Run the Rust application with cargo watch
 cargo watch -x "run -- \
     --client-build-dir ./client/dist \
-    --client-bundle-path ./client/dist/bundle.js \
+    --client-bundle-path bundle.js \
     --server-bundle-path ./client/dist/ssr.js \
+    --html-template-path ./client/dist/template.html \
     --server-port 8080"
 
 # Kill background processes when the script exits
