@@ -1,9 +1,13 @@
 use actix_files as fs;
-use actix_web::{get, web, App, HttpRequest, HttpResponse, HttpServer, Responder, Result};
+use actix_web::{
+    get,
+    web::{self},
+    App, HttpRequest, HttpResponse, HttpServer, Responder, Result,
+};
 use clap::Parser;
 use colored::Colorize;
 use deno_core::{error::AnyError, v8, JsRuntime};
-use std::rc::Rc;
+use std::{fs::read_to_string, rc::Rc};
 
 use kaffe::Kaffe;
 
@@ -21,18 +25,11 @@ struct Args {
 
     #[arg(long, default_value_t = 8080)]
     server_port: u16,
+
+    #[arg(long, default_value = "template.html")]
+    html_template_path: String,
 }
 
-/// Runs a JavaScript file in the provided JsRuntime.
-///
-/// # Arguments
-///
-/// * `js_runtime` - A mutable reference to the JsRuntime.
-/// * `file_path` - The path to the JavaScript file.
-///
-/// # Returns
-///
-/// * `Result<usize, AnyError>` - The module ID if successful, or an error if failed.
 async fn run_js(js_runtime: &mut JsRuntime, file_path: &str) -> Result<usize, AnyError> {
     let main_module = deno_core::resolve_path(file_path, &std::env::current_dir()?)?;
     let mod_id = js_runtime.load_main_es_module(&main_module).await?;
@@ -42,17 +39,6 @@ async fn run_js(js_runtime: &mut JsRuntime, file_path: &str) -> Result<usize, An
     Ok(mod_id)
 }
 
-/// Retrieves the rendered page by executing a JavaScript function.
-///
-/// # Arguments
-///
-/// * `js_runtime` - A mutable reference to the JsRuntime.
-/// * `function_name` - The name of the JavaScript function to execute.
-/// * `argument` - The argument to pass to the JavaScript function.
-///
-/// # Returns
-///
-/// * `Result<String>` - The rendered page as a string if successful, or an error if failed.
 fn retrieve_rendered_page(
     js_runtime: &mut JsRuntime,
     function_name: &str,
@@ -67,23 +53,20 @@ fn retrieve_rendered_page(
     Ok(result_str)
 }
 
-/// Handles the index route and renders the server-side HTML.
-///
-/// # Arguments
-///
-/// * `req` - The HTTP request.
-///
-/// # Returns
-///
-/// * `impl Responder` - The HTTP response containing the rendered HTML.
+fn load_html_template(file_path: &str) -> std::io::Result<String> {
+    read_to_string(file_path)
+}
+
 #[get("/{tail:.*}")]
 async fn index(req: HttpRequest, kaffe: web::Data<Kaffe>) -> impl Responder {
     let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
         module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
         ..Default::default()
     });
+
     let path = req.path();
     let file_path = kaffe.server_bundle_path.clone();
+
     run_js(&mut js_runtime, &file_path)
         .await
         .expect("Should run without issue");
@@ -91,21 +74,15 @@ async fn index(req: HttpRequest, kaffe: web::Data<Kaffe>) -> impl Responder {
         Ok(result) => result,
         Err(e) => format!("Error: {}", e),
     };
-    let html = format!(
-        r#"
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <title>React SSR with Rust</title>
-            </head>
-            <body>
-                <div id="app">{}</div>
-                <script type="module" src="/static/{}"></script>
-            </body>
-        </html>
-        "#,
-        ssr_result, kaffe.client_bundle_path
-    );
+
+    let html_template = load_html_template(&kaffe.html_template_path)
+        .unwrap_or_else(|_| String::from("Error loading HTML template"));
+
+    let html = html_template
+        .replace("{{SSR_CONTENT}}", &ssr_result)
+        .replace("{{CLIENT_BUNDLE_PATH}}", &kaffe.client_bundle_path)
+        .replace("{{TITLE}}", &path);
+
     HttpResponse::Ok().content_type("text/html").body(html)
 }
 
@@ -113,14 +90,28 @@ async fn index(req: HttpRequest, kaffe: web::Data<Kaffe>) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let server_port = args.server_port;
-
     let kaffe = web::Data::new(Kaffe::new(
         args.client_build_dir,
         args.client_bundle_path,
         args.server_bundle_path,
+        args.html_template_path,
         server_port,
     ));
 
+    print_init_metadata(&kaffe, server_port);
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(kaffe.clone())
+            .service(fs::Files::new("/static", kaffe.client_build_dir.clone()).show_files_listing())
+            .service(index)
+    })
+    .bind(format!("127.0.0.1:{}", server_port))?
+    .run()
+    .await
+}
+
+fn print_init_metadata(kaffe: &web::Data<Kaffe>, server_port: u16) {
     println!("\n{}", "Starting Kaffe Server...".bright_green().bold());
     println!("{}", "=========================".bright_green());
     println!("{} {}", "Port:".bright_yellow().bold(), server_port);
@@ -141,14 +132,6 @@ async fn main() -> std::io::Result<()> {
     );
     println!("{}", "=========================".bright_green());
 
-    let server = HttpServer::new(move || {
-        App::new()
-            .app_data(kaffe.clone())
-            .service(fs::Files::new("/static", kaffe.client_build_dir.clone()).show_files_listing())
-            .service(index)
-    })
-    .bind(format!("127.0.0.1:{}", server_port))?;
-
     println!("\n{}", "Server is running!".bright_green().bold());
     println!(
         "{} {}",
@@ -165,6 +148,4 @@ async fn main() -> std::io::Result<()> {
             .underline()
     );
     println!("\n{}", "Press Ctrl+C to stop the server".bright_cyan());
-
-    server.run().await
 }
