@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+pub mod parser;
+
 #[derive(Clone)]
 pub struct Kaffe {
     pub client_build_dir: PathBuf,

@@ -5,42 +5,44 @@ const esbuild = require("esbuild");
 const fs = require("fs");
 const path = require("path");
 
-// Function to copy template.html to dist directory
-function copyTemplateHtml() {
-  const sourceFile = path.join(__dirname, "template.html");
-  const destinationFile = path.join(__dirname, "dist", "template.html");
+// // Function to copy template.html to dist directory
+// function copyTemplateHtml() {
+//   const sourceFile = path.join(__dirname, "template.html");
+//   const destinationFile = path.join(__dirname, "dist", "template.html");
 
-  fs.copyFile(sourceFile, destinationFile, (err) => {
-    if (err) {
-      console.error("Error copying template.html:", err);
-    } else {
-      console.log("template.html copied to dist directory successfully");
-    }
-  });
-}
+//   fs.copyFile(sourceFile, destinationFile, (err) => {
+//     if (err) {
+//       console.error("Error copying template.html:", err);
+//     } else {
+//       console.log("template.html copied to dist directory successfully");
+//     }
+//   });
+// }
 
-// Client-side bundle
-esbuild
-  .build({
-    entryPoints: ["src/client-entry.tsx"],
-    bundle: true,
-    outfile: "dist/bundle.js",
-    minify: true,
-    sourcemap: true,
-    target: ["es2015"],
-    define: { "process.env.NODE_ENV": '"development"' },
-    format: "esm",
-  })
-  .then(() => {
-    console.log("Client bundle built successfully");
-    copyTemplateHtml(); // Copy template.html after client bundle is built
-  })
-  .catch(() => process.exit(1));
+// // Client-side bundle
+// esbuild
+//   .build({
+//     entryPoints: ["src/client-entry.tsx"],
+//     bundle: true,
+//     outfile: "dist/bundle.js",
+//     minify: true,
+//     sourcemap: true,
+//     target: ["es2015"],
+//     define: { "process.env.NODE_ENV": '"development"' },
+//     format: "esm",
+//   })
+//   .then(() => {
+//     console.log("Client bundle built successfully");
+//     copyTemplateHtml(); // Copy template.html after client bundle is built
+//   })
+//   .catch(() => process.exit(1));
 
 // Server-side bundle for V8 environment
 const watch = process.argv.includes("--watch");
 const buildOptions = {
-  entryPoints: ["src/server-entry.tsx"],
+  entryPoints: [
+    "/Users/schachte/Documents/learn_rust/SSR/ssr/client/src/server-entry.tsx",
+  ],
   bundle: true,
   minify: false,
   outfile: "dist/ssr.js",
@@ -60,7 +62,9 @@ const buildOptions = {
       modules: ["url", "path", "stream", "util"],
     }),
   ],
-  inject: ["./polyfills/URL.js"],
+  inject: [
+    "/Users/schachte/Documents/learn_rust/SSR/ssr/client/polyfills/URL.js",
+  ],
   external: [],
 };
 

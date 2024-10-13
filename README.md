@@ -1,58 +1,54 @@
 ## Background
 
-Experimental POC for doing server side rendering with React in Rust using the V8 core implementation from Deno
+Experimental static site generation engine for React built in Rust using V8 engine from Deno.
 
-### _Motivation:_
+My goal is to create a Markdown first SSG generation engine that accepts embedded React components for interactive components.
 
-The goal is to build out the SSR (server side rendering) component of a larger SSG (static site generator) tool for quickly turning Markdown files which contain React components into a hosted site.
+## How it works
 
-### _Current progress:_
+This is a high-level overview of how the engine will run.
 
-- Experimenting with V8 lib from `deno_core` for compiling and running JS bundles in Rust
-- Got a rudimentary SSR setup running while also supporting clientside hydration
+### Markdown AST Generation
 
-### _Thoughts I'm tinkering with:_
+The markdown piece is fairly trivial given the simplicity of the language itself. We need to parse the characters of the file and generate an AST to iterate over later. The iteration will allow us to create the `ASTNode` -> `Markdown HTML` mapping such as `## hello` -> `<h2>hello</h2>`.
 
-- Reusable lib for easy self-hosting
-- Hot module reloading setup
-- Custom Markdown AST generation that supports embedding React components (similar to ReactMDX)
+### Bundling & Dynamic HTML generation
 
-## Getting started:
+The complex piece of this is getting embedded React components to work within the Markdown, similar to MDX. Assume we have an example file such as:
 
-1. Initial step is to get some client program setup. I've added a demo inside of `client` which is a basic React site with bundle generation being done via `esbuild`.
-   - Run: `yarn && yarn build`
-   - Bundles will exist in `client/dist/`
-2. Two bundles will get generated, one for the server and one for the client
-   - `bundle.js`
-   - `ssr.js`
-3. Generate a release binary for `Kaffe` by running `cargo build --release`
+```jsx
+import Home from "./components/Home";
 
-You can now run the SSR server with Kaffe like so:
+# Welcome to My App
 
-```bash
-./target/release/ssr \
-  --client-build-dir ./client/dist \
-  --client-bundle-path ./client/dist/bundle.js \
-  --server-bundle-path ./client/dist/ssr.js \
-  --server-port 8080
+This is a paragraph.
+
+<Home></Home>
 ```
 
+Clearly, this is non-traditional Markdown as we have a React component within. We need a way to resolve the import and also render the component itself to HTML. The way Kaffe handles this is a multi-step process.
+
+1. Generate AST which will create nodes for imports, headings, react components, paragraphs, text, etc.
+2. Extract the React components
+3. Extract the import statements
+4. Dynamically generate a `.tsx/.jsx` React file with the imports and components within.
+
+Once we have this temp file of the react component(s), we can run it through a bundler to get a standard JS output file compatible for running through Node or V8 to extract the generated HTML. The HTML generation is being done through the help of `react-dom/server`, which is traditionally used for SSR (static site rendering).
+
+5. Run the output bundle through the V8 runtime - this will generate the HTML for us and assign to a global variable.
+6. Invoke the runtime by grabbing the HTML string we assigned to the global scope and output it to get the HTML
+
+### Example
+
 ```
-Starting Kaffe Server...
-=========================
-Port: 8080
-Client Build Dir: ./client/dist
-Client Bundle: ./client/dist/bundle.js
-Server Bundle: ./client/dist/ssr.js
-=========================
-
-Server is running!
-Local: http://localhost:8080
-Network: http://127.0.0.1:8080
-
-Press Ctrl+C to stop the server
+let markdown_input = r#"
+   import Home from "./components/Home";
+   <Home/>
+"#;
 ```
 
-### Automatic compilation
+_Invoke Kaffe_
 
-I've added a poor mans version of HMR (hot module reloading), which you can see inside `./dev.sh`. This will auto recompile any of the clientside or backend Rust bundles/binaries when developing.
+```
+<div><button>YAY</button><div>hello</div></div>
+```

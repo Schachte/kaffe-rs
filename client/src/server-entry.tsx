@@ -1,17 +1,14 @@
 import React from "react";
-import "fast-text-encoding";
-import ReactDOMServer from "react-dom/server";
-import { StaticRouter } from "react-router-dom/server";
-import Routing from "./Routing";
+        import "fast-text-encoding";
+        import ReactDOMServer from "react-dom/server";
+        import Home from "./components/Home";
 
-export const renderSSR = (location: string = "/") => {
-  const result = ReactDOMServer.renderToString(
-    <StaticRouter location={location}>
-      <Routing />
-    </StaticRouter>
-  );
-  globalThis.ssrResult = result;
-  return result;
-};
-
-globalThis.renderSSR = renderSSR;
+        // Expose the renderToString function globally
+        (globalThis as any).renderToString = (location = "/") => {
+        return ReactDOMServer.renderToString(
+            <React.Fragment>
+            <Home />
+            </React.Fragment>
+        );
+        };
+        
