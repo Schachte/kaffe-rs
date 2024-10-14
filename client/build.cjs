@@ -2,13 +2,16 @@ const {
   nodeModulesPolyfillPlugin,
 } = require("esbuild-plugins-node-modules-polyfill");
 const esbuild = require("esbuild");
+const path = require("path");
+
+const outputName = process.argv[2] || "bundle";
 
 // Client-side bundle
 esbuild
   .build({
     entryPoints: ["client/dist/client-entry.tsx"],
     bundle: true,
-    outfile: "client/dist/bundle.js",
+    outfile: `client/dist/${outputName}`,
     minify: true,
     sourcemap: true,
     target: ["es2015"],
@@ -23,7 +26,7 @@ const buildOptions = {
   entryPoints: ["client/dist/server-entry.tsx"],
   bundle: true,
   minify: false,
-  outfile: "client/dist/ssr.js",
+  outfile: `client/dist/ssr-${outputName}`,
   format: "esm",
   target: ["es2020"],
   platform: "neutral",
@@ -53,7 +56,7 @@ if (watch) {
   esbuild
     .build(buildOptions)
     .then(() => {
-      console.log("Server bundle built successfully");
+      console.log(`Server bundle (${outputName}-ssr.js) built successfully`);
     })
     .catch((e) => console.log(e));
 }

@@ -70,20 +70,23 @@ and Kaffe will generate:
 
 ```bash
 cargo run -- \
-    -m examples/example_with_react.mdx \
-    -p 9090 \
-    -c client/src/components \
-    -b client/dist
+    --input-directory examples \
+    --server-port 8080 \
+    --client-component-directory client/src/components \
+    --client-build-dir client/dist/components \
+    --output-dir output
 ```
 
 _Output:_
 
 ```
-Files copied successfully from client/src/components to client/dist
+Files copied successfully from client/src/components to client/dist/components
+Files copied successfully from client/src/components to client/dist/components
+Files copied successfully from client/src/components to client/dist/components
 Files generated successfully
 Starting server...
 Server running successfully!
-Open your browser and navigate to: http://localhost:9090
+Open your browser and navigate to: http://localhost:8080
 ```
 
 ## File structure & processing explained
@@ -99,3 +102,18 @@ Open your browser and navigate to: http://localhost:9090
 5. On the server, we can do the SSR piece by invoking the bundle inside of a new V8 context (the Javascript engine that will compile and execute the bundle). Kaffe uses the `deno_core` implementation of the V8 engine.
 
 6. In tandem, Kaffe will produce the client-side equivalent bundle that gets loaded on the client to handle any interactivity required by React, event handlers, etc.
+
+## Hot Module Reloading
+
+You can simulate a basic HMR from just running `cargo watch`:
+
+```bash
+cargo watch -x "run -- \
+    --input-directory examples \
+    --server-port 8080 \
+    --client-component-directory client/src/components \
+    --client-build-dir client/dist/components \
+    --output-dir output"
+```
+
+All React or Rust changes will trigger a (very fast) rebuild.

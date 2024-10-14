@@ -4,6 +4,9 @@ use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
 use std::fs::create_dir_all;
 use std::{fs as std_fs, io};
+use tokio::fs as tokio_fs;
+
+use walkdir::WalkDir;
 
 use std::path::{Path, PathBuf};
 
@@ -19,8 +22,8 @@ use std::{
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short = 'm', long, default_value = "examples/example_with_react.mdx")]
-    markdown_path: PathBuf,
+    #[arg(short = 'i', long, default_value = "examples")]
+    input_directory: PathBuf,
 
     #[arg(short = 'p', long, default_value = "8080")]
     server_port: String,
@@ -41,7 +44,7 @@ async fn bundle_react_component(
     markdown_input: &str,
     client_component_dir: &str,
     client_build_dir: &str,
-    _file_name: &str,
+    file_name: &str,
 ) -> Result<String, anyhow::Error> {
     let parsed_nodes = match parse_markdown(markdown_input) {
         Ok(nodes) => nodes,
@@ -52,8 +55,16 @@ async fn bundle_react_component(
         .await
         .map_err(|e| anyhow!("Failed to generate HTML: {:?}", e))?;
 
-    let imports_string = imports.join("\n");
-    let components_string = react_components.join(", ");
+    let mut imports_string = imports.join("\n");
+    let mut components_string = react_components.join(", ");
+
+    if react_components.len() == 0 {
+        components_string = "\"\"".to_string();
+    }
+
+    if imports.len() == 0 {
+        imports_string = "".to_string();
+    }
 
     let server_entry_content = load_file_contents("client/src/server-entry.template.tsx")?;
     let server_entry_content =
@@ -92,24 +103,14 @@ async fn bundle_react_component(
         .write_all(client_entry_content.as_bytes())
         .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", client_file_path, e))?;
 
-    // The generated server/client entrypoints will need the components to exist relative to
-    // the files, so we just copy them to the build dir
-    let _ = copy_files(&client_component_dir, &client_build_dir);
-
     let status = Command::new("node")
-        .args(&["client/build.cjs"])
+        .args(&["client/build.cjs", &format!("{}.js", &file_name)])
         .output()
         .map_err(|e| anyhow!("Failed to execute build script: {:?}", e))?;
 
     if !status.status.success() {
         let stderr = String::from_utf8_lossy(&status.stderr);
-        let stdout = String::from_utf8_lossy(&status.stdout);
-        return Err(anyhow!(
-            "Build script failed with status: {}. Output: {}, Errors: {}",
-            status.status,
-            stdout,
-            stderr
-        ));
+        return Err(anyhow!("Build script failed: {}", stderr));
     }
 
     Ok(html_content)
@@ -129,10 +130,6 @@ fn copy_files(source_dir: &str, target_dir: &str) -> io::Result<()> {
         }
     }
 
-    println!(
-        "Files copied successfully from {} to {}",
-        source_dir, target_dir
-    );
     Ok(())
 }
 
@@ -162,6 +159,10 @@ fn retrieve_rendered_html(js_runtime: &mut JsRuntime) -> Result<String> {
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
+    // The generated server/client entrypoints will need the components to exist relative to
+    // the files, so we just copy them to the build dir
+    let _ = copy_files(&args.client_component_directory, &args.client_build_dir);
+
     if let Err(e) = run(&args).await {
         eprintln!("Error during file generation: {:?}", e);
         return Ok(());
@@ -189,62 +190,114 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-fn filename_from_path(filepath: &PathBuf) -> Result<String, String> {
-    let path = filepath.as_path();
-    if let Some(filename) = path.file_name() {
-        if let Some(filename_str) = filename.to_str() {
-            return Ok(filename_str.to_string());
-        }
-    }
-    println!("Err");
-    Err("No valid filename found.".to_string())
+async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    tokio_fs::create_dir_all(&args.output_dir).await?;
+    tokio_fs::create_dir_all(args.output_dir.join("static")).await?;
+
+    process_markdown_files(&args.input_directory, &args.output_dir, &args).await?;
+
+    println!("Files generated successfully");
+    Ok(())
 }
 
-async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
-        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
-        ..Default::default()
-    });
+fn filename_without_extension(path: &PathBuf) -> Option<String> {
+    path.file_name()
+        .and_then(|os_str| os_str.to_str())
+        .map(String::from)
+}
 
-    let markdown_input = std_fs::read_to_string(&args.markdown_path)
-        .map_err(|e| anyhow!("Failed to read markdown file: {:?}", e))?;
+fn path_to_filename_without_extension(path: &Path) -> String {
+    path.file_name()
+        .and_then(|os_str| os_str.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "".to_string())
+}
 
-    let md_filename = match filename_from_path(&args.markdown_path) {
-        Ok(filename) => filename,
-        Err(e) => format!("Error: {}", e),
-    };
+async fn process_markdown_files(
+    input_dir: &Path,
+    output_dir: &Path,
+    args: &Args,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for entry in WalkDir::new(input_dir).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path().to_path_buf();
+        if path.is_file()
+            && path
+                .extension()
+                .map_or(false, |ext| ext == "md" || ext == "mdx")
+        {
+            let relative_path = path.strip_prefix(input_dir)?.to_path_buf();
+            let output_path = output_dir.join(&relative_path).with_extension("html");
+            if let Some(parent) = output_path.parent() {
+                std_fs::create_dir_all(parent)?;
+            }
+            process_single_file(&path, &output_path, args).await?;
 
-    println!("{} is filename", md_filename);
+            let filename_noext =
+                match filename_without_extension(&path.strip_prefix(input_dir)?.to_path_buf()) {
+                    Some(name) => name,
+                    None => "".to_string(),
+                };
+
+            let client_bundle =
+                tokio_fs::read_to_string(format!("client/dist/{}.js", &filename_noext)).await?;
+            tokio_fs::write(
+                args.output_dir
+                    .join(format!("static/{}.js", &filename_noext)),
+                client_bundle,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+async fn process_single_file(
+    input_path: &Path,
+    output_path: &Path,
+    args: &Args,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let markdown_input = tokio_fs::read_to_string(input_path).await?;
+    let filename = input_path
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid filename"))?
+        .to_string();
 
     let _ = bundle_react_component(
         &markdown_input,
         &args.client_component_directory,
         &args.client_build_dir,
-        &md_filename,
+        path_to_filename_without_extension(&input_path).as_str(),
     )
     .await?;
 
-    match run_js(&mut js_runtime, "client/dist/ssr.js").await {
-        Ok(_) => (),
-        Err(e) => println!("Error running JavaScript bundle: {}", e),
-    }
+    let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
+        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
+        ..Default::default()
+    });
 
-    let rendered_html = retrieve_rendered_html(&mut js_runtime)
-        .map_err(|e| anyhow!("Error retrieving rendered HTML: {}", e))?;
+    run_js(
+        &mut js_runtime,
+        format!(
+            "client/dist/ssr-{}.js",
+            path_to_filename_without_extension(&input_path)
+        )
+        .as_str(),
+    )
+    .await?;
 
-    let template = load_file_contents("client/template.html")?;
+    let rendered_html = retrieve_rendered_html(&mut js_runtime)?;
+    let template = tokio_fs::read_to_string("client/template.html").await?;
 
-    let final_html = template.replace("{{SSR_CONTENT}}", &rendered_html);
-    let final_html = final_html.replace("{{CLIENT_BUNDLE_PATH}}", "bundle.js");
-    let final_html = final_html.replace("{{TITLE}}", &md_filename);
+    let final_html = template
+        .replace("{{SSR_CONTENT}}", &rendered_html)
+        .replace(
+            "{{CLIENT_BUNDLE_PATH}}",
+            format!("{}.js", path_to_filename_without_extension(&input_path)).as_str(),
+        )
+        .replace("{{TITLE}}", &filename);
 
-    std_fs::create_dir_all("output/static")?;
+    tokio_fs::write(output_path, final_html).await?;
 
-    let output_file_path = "output/index.html";
-    std_fs::write(output_file_path, final_html)?;
-
-    let client_bundle = load_file_contents("client/dist/bundle.js")?;
-    std_fs::write("output/static/bundle.js", client_bundle)?;
-    println!("Files generated successfully");
     Ok(())
 }

@@ -18,6 +18,8 @@ nom = "7.1.3"
 tempfile = "3.13.0"
 esbuild-rs = "0.13.8"
 anyhow = "1.0.89"
+walkdir = "2.5.0"
+tokio = "1.40.0"
 
 
 [lib]

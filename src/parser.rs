@@ -7,13 +7,14 @@ use nom::{
     combinator::{map, opt, peek, recognize, value},
     error::Error,
     multi::{many0, many1},
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, preceded, terminated, tuple},
     IResult,
 };
 
 #[derive(Debug)]
 pub enum ASTNode {
     Import(ImportType),
+    Link(String, String),
     Heading(u8, String),
     ReactComponent(String),
     Paragraph(String),
@@ -22,7 +23,6 @@ pub enum ASTNode {
     Emphasis(String),
     Code(String),
     CodeBlock(String, String),
-    Link(String, String),
     Image(String, String),
     List(Vec<String>),
     BlockQuote(String),
@@ -78,23 +78,21 @@ fn parse_inside_brackets(input: &str) -> IResult<&str, &str> {
     delimited(char('['), is_not("]"), char(']'))(input)
 }
 
-fn parse_inside_parens(input: &str) -> IResult<&str, &str> {
-    delimited(char('('), is_not(")"), char(')'))(input)
+fn parse_url(input: &str) -> IResult<&str, &str> {
+    delimited(char('('), take_until(")"), char(')'))(input)
 }
 
 fn parse_link(input: &str) -> IResult<&str, ASTNode> {
-    let (input, text) = parse_inside_brackets(input)?;
-    let (input, _) = char('(')(input)?;
-    let (input, url) = parse_inside_parens(input)?;
-    Ok((input, ASTNode::Link(text.to_string(), url.to_string())))
+    map(tuple((parse_inside_brackets, parse_url)), |(text, url)| {
+        ASTNode::Link(text.to_string(), url.to_string())
+    })(input)
 }
 
 fn parse_image(input: &str) -> IResult<&str, ASTNode> {
-    let (input, _) = char('!')(input)?;
-    let (input, alt_text) = parse_inside_brackets(input)?;
-    let (input, _) = char('(')(input)?;
-    let (input, url) = parse_inside_parens(input)?;
-    Ok((input, ASTNode::Image(alt_text.to_string(), url.to_string())))
+    map(
+        preceded(char('!'), tuple((parse_inside_brackets, parse_url))),
+        |(alt_text, url)| ASTNode::Image(alt_text.to_string(), url.to_string()),
+    )(input)
 }
 
 fn parse_emphasis(input: &str) -> IResult<&str, ASTNode> {
@@ -186,6 +184,7 @@ pub fn parse_markdown(input: &str) -> Result<Vec<ASTNode>, AnyError> {
         parse_whitespace,
         alt((
             parse_import,
+            parse_link,
             parse_code_block,
             parse_heading,
             parse_react_component,
@@ -195,7 +194,6 @@ pub fn parse_markdown(input: &str) -> Result<Vec<ASTNode>, AnyError> {
             parse_code,
             parse_emphasis,
             parse_strong,
-            parse_link,
             parse_image,
             parse_blockquote,
         )),
