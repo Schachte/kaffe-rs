@@ -1,8 +1,5 @@
-use actix_web::{
-    get,
-    web::{self},
-    HttpRequest, HttpResponse, Responder, Result,
-};
+use actix_web::Result;
+use anyhow::anyhow;
 use deno_core::{error::AnyError, v8, JsRuntime};
 use std::{
     fs::{read_to_string, File},
@@ -11,96 +8,98 @@ use std::{
     rc::Rc,
 };
 
-use kaffe::{
-    parser::{parse_markdown, ASTNode, ImportType},
-    Kaffe,
-};
+use kaffe::parser::{generate_html, parse_markdown};
 
-fn extract_react_components(nodes: &[ASTNode]) -> Vec<String> {
-    nodes
-        .iter()
-        .filter_map(|node| {
-            if let ASTNode::ReactComponent(name) = node {
-                Some(format!("<{} />", name))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn extract_imports(nodes: &[ASTNode]) -> Vec<String> {
-    nodes
-        .iter()
-        .filter_map(|node| {
-            if let ASTNode::Import(import_type) = node {
-                match import_type {
-                    ImportType::Named(component, path) => {
-                        Some(format!("import {{ {} }} from \"{}\";", component, path))
-                    }
-                    ImportType::Default(component, path) => {
-                        Some(format!("import {} from \"{}\";", component, path))
-                    }
-                }
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn bundle_react_component(markdown_input: &str) -> Result<()> {
-    // Parse the markdown input
+async fn bundle_react_component(markdown_input: &str) -> Result<String, anyhow::Error> {
     let parsed_nodes = match parse_markdown(markdown_input) {
         Ok(nodes) => nodes,
-        Err(e) => return Ok(()),
+        Err(e) => return Err(anyhow!("Failed to parse markdown: {:?}", e)),
     };
 
-    // Extract React components
-    let react_components = extract_react_components(&parsed_nodes);
+    let (html_content, imports, react_components) = generate_html(&parsed_nodes)
+        .await
+        .map_err(|e| anyhow!("Failed to generate HTML: {:?}", e))?;
 
-    let imports = extract_imports(&parsed_nodes);
-
-    println!("Parsed nodes: {:?}", parsed_nodes);
-    println!("React components: {:?}", react_components);
-    println!("Imports: {:?}", imports);
-
-    // Join components
-    let components_string = react_components.join(",\n    ");
     let imports_string = imports.join("\n");
+    let components_string = react_components.join(", ");
 
-    // Create the content for the server-entry file
     let server_entry_content = format!(
         r#"import React from "react";
         import "fast-text-encoding";
         import ReactDOMServer from "react-dom/server";
-        {}
 
-        // Expose the renderToString function globally
+        {imports}
+
         (globalThis as any).renderToString = (location = "/") => {{
-        return ReactDOMServer.renderToString(
-            <React.Fragment>
-            {}
-            </React.Fragment>
-        );
+            const components = {{ {components} }};
+            return ReactDOMServer.renderToString(
+                <>
+                    {html}
+                </>
+            );
         }};
         "#,
-        imports_string, components_string
+        imports = imports_string,
+        components = components_string,
+        html = html_content
     );
 
-    // Write to the server-entry.tsx file
+    let client_entry_content = format!(
+        r#"import * as React from "react";
+import {{ hydrateRoot }} from "react-dom/client";
+{imports}
+
+const container = document.getElementById("root");
+if (container) {{
+  hydrateRoot(
+    container,
+    <React.StrictMode>
+      <>
+      {html}
+      </>
+    </React.StrictMode>
+  );
+}} else {{
+  console.error("Container element with id 'root' not found");
+}}
+"#,
+        imports = imports_string,
+        html = html_content // Insert the HTML directly
+    );
+
     let file_path = "client/src/server-entry.tsx";
-    let mut file = File::create(file_path)?;
-    file.write_all(server_entry_content.as_bytes())?;
+    let mut file = File::create(file_path)
+        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", file_path, e))?;
+
+    file.write_all(server_entry_content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", file_path, e))?;
+
+    let file_path = "client/src/client-entry.tsx";
+    let mut file = File::create(file_path)
+        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", file_path, e))?;
+
+    file.write_all(client_entry_content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", file_path, e))?;
 
     // Run the build script
-    let status = Command::new("node").args(&["client/build.cjs"]).status()?;
+    let status = Command::new("node")
+        .args(&["client/build.cjs"])
+        .output() // Capture the output
+        .map_err(|e| anyhow!("Failed to execute build script: {:?}", e))?;
 
-    if !status.success() {
-        return Ok(());
+    if !status.status.success() {
+        // Log the output
+        let stderr = String::from_utf8_lossy(&status.stderr);
+        let stdout = String::from_utf8_lossy(&status.stdout);
+        return Err(anyhow!(
+            "Build script failed with status: {}. Output: {}, Errors: {}",
+            status.status,
+            stdout,
+            stderr
+        ));
     }
 
-    Ok(())
+    Ok(html_content)
 }
 
 async fn run_js(js_runtime: &mut JsRuntime, file_path: &str) -> Result<usize, AnyError> {
@@ -110,20 +109,6 @@ async fn run_js(js_runtime: &mut JsRuntime, file_path: &str) -> Result<usize, An
     js_runtime.run_event_loop(Default::default()).await?;
     result.await?;
     Ok(mod_id)
-}
-
-fn retrieve_rendered_page(
-    js_runtime: &mut JsRuntime,
-    function_name: &str,
-    argument: &str,
-) -> Result<String> {
-    let script = format!("{}('{}');", function_name, argument);
-    let scope = &mut js_runtime.handle_scope();
-    let source = v8::String::new(scope, &script).unwrap();
-    let script = v8::Script::compile(scope, source, None).unwrap();
-    let result = script.run(scope).unwrap();
-    let result_str = result.to_string(scope).unwrap().to_rust_string_lossy(scope);
-    Ok(result_str)
 }
 
 fn load_html_template(file_path: &str) -> std::io::Result<String> {
@@ -139,35 +124,6 @@ fn retrieve_rendered_html(js_runtime: &mut JsRuntime) -> Result<String> {
     Ok(result_str)
 }
 
-#[get("/{tail:.*}")]
-async fn index(req: HttpRequest, kaffe: web::Data<Kaffe>) -> impl Responder {
-    let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
-        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
-        ..Default::default()
-    });
-
-    let path = req.path();
-    let file_path = kaffe.server_bundle_path.clone();
-
-    run_js(&mut js_runtime, &file_path)
-        .await
-        .expect("Should run without issue");
-    let ssr_result = match retrieve_rendered_page(&mut js_runtime, "renderSSR", path) {
-        Ok(result) => result,
-        Err(e) => format!("Error: {}", e),
-    };
-
-    let html_template = load_html_template(&kaffe.html_template_path)
-        .unwrap_or_else(|_| String::from("Error loading HTML template"));
-
-    let html = html_template
-        .replace("{{SSR_CONTENT}}", &ssr_result)
-        .replace("{{CLIENT_BUNDLE_PATH}}", &kaffe.client_bundle_path)
-        .replace("{{TITLE}}", &path);
-
-    HttpResponse::Ok().content_type("text/html").body(html)
-}
-
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
@@ -177,21 +133,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example markdown input
     let markdown_input = r#"
-        import Home from "./components/Home";
-        <Home/>
-    "#;
+    import Home from "./components/Home";
 
-    bundle_react_component(&markdown_input)?;
+    <Home/>
 
-    match run_js(&mut js_runtime, "dist/ssr.js").await {
-        Ok(_) => println!("JavaScript bundle executed successfully"),
+    # hi 
+    this is text
+    ## heading 
+
+    ```javascript
+    var x = 5;
+    ```
+
+    - hello
+    - this is list
+    - item aganin
+"#;
+
+    // Call to bundle_react_component and await its result
+    let _ = bundle_react_component(&markdown_input).await?;
+
+    // Run the JavaScript bundle
+    match run_js(&mut js_runtime, "client/dist/ssr.js").await {
+        Ok(_) => (),
         Err(e) => println!("Error running JavaScript bundle: {}", e),
     }
 
-    match retrieve_rendered_html(&mut js_runtime) {
-        Ok(html) => println!("Rendered HTML: {}", html),
-        Err(e) => println!("Error retrieving rendered HTML: {}", e),
-    }
+    // Retrieve the rendered HTML
+    let rendered_html = retrieve_rendered_html(&mut js_runtime)
+        .map_err(|e| anyhow!("Error retrieving rendered HTML: {}", e))?;
 
+    // Load the HTML template
+    let template = load_html_template("client/template.html")?;
+
+    // Inject the rendered HTML into the template
+    let final_html = template.replace("{{SSR_CONTENT}}", &rendered_html);
+    let final_html = final_html.replace("{{CLIENT_BUNDLE_PATH}}", "bundle.js");
+
+    // Write the final HTML to a file
+    let output_file_path = "output/index.html";
+
+    // Open the file for writing (overwriting if it exists)
+    let mut output_file = File::create(output_file_path)
+        .map_err(|e| anyhow!("Failed to create or overwrite output file: {:?}", e))?;
+
+    // Write the final HTML content to the file
+    output_file
+        .write_all(final_html.as_bytes())
+        .map_err(|e| anyhow!("Failed to write to output file: {:?}", e))?;
+
+    println!("Files generated successfully, you may run via python3 server.py to test");
     Ok(())
 }

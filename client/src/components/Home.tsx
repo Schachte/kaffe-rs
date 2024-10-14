@@ -10,7 +10,6 @@ const Home = () => {
   return (
     <div onClick={() => console.log("clicked")}>
       <button onClick={() => setClick(click + 1)}>YAY</button>
-      {fn()} {click}
     </div>
   );
 };

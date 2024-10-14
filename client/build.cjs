@@ -2,50 +2,28 @@ const {
   nodeModulesPolyfillPlugin,
 } = require("esbuild-plugins-node-modules-polyfill");
 const esbuild = require("esbuild");
-const fs = require("fs");
-const path = require("path");
 
-// // Function to copy template.html to dist directory
-// function copyTemplateHtml() {
-//   const sourceFile = path.join(__dirname, "template.html");
-//   const destinationFile = path.join(__dirname, "dist", "template.html");
-
-//   fs.copyFile(sourceFile, destinationFile, (err) => {
-//     if (err) {
-//       console.error("Error copying template.html:", err);
-//     } else {
-//       console.log("template.html copied to dist directory successfully");
-//     }
-//   });
-// }
-
-// // Client-side bundle
-// esbuild
-//   .build({
-//     entryPoints: ["src/client-entry.tsx"],
-//     bundle: true,
-//     outfile: "dist/bundle.js",
-//     minify: true,
-//     sourcemap: true,
-//     target: ["es2015"],
-//     define: { "process.env.NODE_ENV": '"development"' },
-//     format: "esm",
-//   })
-//   .then(() => {
-//     console.log("Client bundle built successfully");
-//     copyTemplateHtml(); // Copy template.html after client bundle is built
-//   })
-//   .catch(() => process.exit(1));
+// Client-side bundle
+esbuild
+  .build({
+    entryPoints: ["client/src/client-entry.tsx"],
+    bundle: true,
+    outfile: "output/static/bundle.js",
+    minify: true,
+    sourcemap: true,
+    target: ["es2015"],
+    define: { "process.env.NODE_ENV": '"development"' },
+    format: "esm",
+  })
+  .catch(() => process.exit(1));
 
 // Server-side bundle for V8 environment
 const watch = process.argv.includes("--watch");
 const buildOptions = {
-  entryPoints: [
-    "/Users/schachte/Documents/learn_rust/SSR/ssr/client/src/server-entry.tsx",
-  ],
+  entryPoints: ["client/src/server-entry.tsx"],
   bundle: true,
   minify: false,
-  outfile: "dist/ssr.js",
+  outfile: "client/dist/ssr.js",
   format: "esm",
   target: ["es2020"],
   platform: "neutral",
@@ -62,9 +40,7 @@ const buildOptions = {
       modules: ["url", "path", "stream", "util"],
     }),
   ],
-  inject: [
-    "/Users/schachte/Documents/learn_rust/SSR/ssr/client/polyfills/URL.js",
-  ],
+  inject: ["client/polyfills/URL.js"],
   external: [],
 };
 
@@ -72,14 +48,12 @@ if (watch) {
   esbuild.context(buildOptions).then((context) => {
     context.watch();
     console.log("Watching for changes...");
-    copyTemplateHtml(); // Copy template.html when watch mode starts
   });
 } else {
   esbuild
     .build(buildOptions)
     .then(() => {
       console.log("Server bundle built successfully");
-      copyTemplateHtml(); // Copy template.html after server bundle is built
     })
-    .catch(() => process.exit(1));
+    .catch((e) => console.log(e));
 }

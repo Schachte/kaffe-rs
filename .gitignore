@@ -11,3 +11,7 @@ client/dist
 dist
 
 dist/ssr.js
+client/src/client-entry.tsx
+client/src/server-entry.tsx
+output
+output/**/*
