@@ -1,7 +1,7 @@
 import { Routes, Route } from "react-router-dom";
-import Home from "./components/Home";
-import Contact from "./components/Contact";
-import NotFound from "./components/NotFound";
+import Home from "./Home";
+import Contact from "./Contact";
+import NotFound from "./NotFound";
 
 export default function Routing() {
   return (
