@@ -9,37 +9,28 @@
 - **Easy Integration:** Use React components seamlessly in your Markdown for enhanced interactivity.
 - **Static Site Generation:** Create a complete static site ready for deployment.
 
-## Getting Started
+## Background
 
-Currently, this repo is built as a POC to prove the possibilities of working with React, V8 and Rust. You can find an example input inside of [./src/main.rs](./src/main.rs).
+This is a low-level engine that exists to handle statically generating files to HTML from Markdown as a first-class file format.
 
-_Example Input_
+Let's assume you want to deploy a new blog, but don't want to learn complex new frameworks, but just focus on the content and maybe some basic styling and interactive React components as you need.
 
-````markdown
-let markdown_input = r#"
+1. Write a Markdown file
+2. `kaffe -m your_blog_article.mdx`
+3. HTML file generated
+
+The Markdown supports React components with import statements like so:
+
+```
 import Home from "./components/Home";
 
-<Home/>
+<Home />
 
 # hi
-
 this is text
-
-## heading
-
-```javascript
-var x = 5;
 ```
 
-- hello
-- this is list
-- item aganin
-  "#;
-````
-
-_Example Output_
-
-Note: The clientside bundle is automatically injected to support hydrating the DOM with interactivity powered by React.
+and Kaffe will generate:
 
 ```html
 <!DOCTYPE html>
@@ -50,13 +41,17 @@ Note: The clientside bundle is automatically injected to support hydrating the D
   <body>
     <div id="root">
       <div>
+        <div>
+          Button clicked:
+          <!-- -->0<!-- -->
+          times
+        </div>
         <button>YAY</button>
       </div>
       <h1>hi</h1>
-      <p>this is text ## heading</p>
-      <pre>
-        <code class="language-javascript">var x = 5;</code>
-      </pre>
+      <p>this is text</p>
+      <h2>heading</h2>
+      <pre><code class="language-javascript">var x = 5;</code></pre>
       <ul>
         <li>hello</li>
         <li>this is list</li>
@@ -67,3 +62,40 @@ Note: The clientside bundle is automatically injected to support hydrating the D
   </body>
 </html>
 ```
+
+## Getting Started
+
+1. `cd client && yarn`
+2. From root, you can run the following:
+
+```bash
+cargo run -- \
+    -m examples/example_with_react.mdx \
+    -p 9090 \
+    -c client/src/components \
+    -b client/dist
+```
+
+_Output:_
+
+```
+Files copied successfully from client/src/components to client/dist
+Files generated successfully
+Starting server...
+Server running successfully!
+Open your browser and navigate to: http://localhost:9090
+```
+
+## File structure & processing explained
+
+1. The `client` dir expects all components to live within `client/src/components`.
+
+2. The templates for the entrypoints when doing SSR (server-side rendering) and client-side hydration exist in `client/src/*-entry.template.tsx`.
+
+3. When the program runs, it loads the markdown file into memory _(see: [./examples](examples/directory))_, creates an AST from the source and handles the HTML compilation for both React and Markdown.
+
+4. Since this supports Typescript out of the box, Kaffe transpiles the React source (.tsx) into a single Javascript bundle using `esbuild`.
+
+5. On the server, we can do the SSR piece by invoking the bundle inside of a new V8 context (the Javascript engine that will compile and execute the bundle). Kaffe uses the `deno_core` implementation of the V8 engine.
+
+6. In tandem, Kaffe will produce the client-side equivalent bundle that gets loaded on the client to handle any interactivity required by React, event handlers, etc.

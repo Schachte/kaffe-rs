@@ -6,9 +6,9 @@ const esbuild = require("esbuild");
 // Client-side bundle
 esbuild
   .build({
-    entryPoints: ["client/src/client-entry.tsx"],
+    entryPoints: ["client/dist/client-entry.tsx"],
     bundle: true,
-    outfile: "output/static/bundle.js",
+    outfile: "client/dist/bundle.js",
     minify: true,
     sourcemap: true,
     target: ["es2015"],
@@ -20,7 +20,7 @@ esbuild
 // Server-side bundle for V8 environment
 const watch = process.argv.includes("--watch");
 const buildOptions = {
-  entryPoints: ["client/src/server-entry.tsx"],
+  entryPoints: ["client/dist/server-entry.tsx"],
   bundle: true,
   minify: false,
   outfile: "client/dist/ssr.js",

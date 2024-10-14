@@ -1,18 +1,13 @@
 use anyhow::anyhow;
-use std::path::Path;
-
-use deno_core::{anyhow, error::AnyError, v8, JsRuntime};
-
+use deno_core::error::AnyError;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take_until, take_while1},
-    character::complete::{
-        char, multispace0, multispace1, newline, none_of, one_of, space0, space1,
-    },
-    combinator::{eof, map, opt, peek, recognize, value},
+    character::complete::{char, multispace0, multispace1, newline, none_of, space0},
+    combinator::{map, opt, peek, recognize, value},
     error::Error,
     multi::{many0, many1},
-    sequence::{delimited, pair, preceded, terminated},
+    sequence::{delimited, preceded, terminated},
     IResult,
 };
 
@@ -36,15 +31,15 @@ pub enum ASTNode {
 
 #[derive(Debug)]
 pub enum ImportType {
-    Named(String, String), // For imports like: import { Home } from "./components/Home";
-    Default(String, String), // For imports like: import Home from "./components/Home";
+    Named(String, String),
+    Default(String, String),
 }
 
 fn parse_default_import(input: &str) -> IResult<&str, ImportType> {
     let (input, component) = take_until(" from")(input)?;
     let (input, _) = tag(" from")(input)?;
     let (input, _) = multispace0(input)?;
-    let (input, path) = delimited(char('\"'), take_until("\""), char('\"'))(input)?;
+    let (input, path) = delimited(char('"'), take_until("\""), char('"'))(input)?;
     Ok((
         input,
         ImportType::Default(component.trim().to_owned(), path.to_owned()),
@@ -56,7 +51,7 @@ fn parse_named_import(input: &str) -> IResult<&str, ImportType> {
     let (input, _) = multispace0(input)?;
     let (input, _) = tag("from")(input)?;
     let (input, _) = multispace0(input)?;
-    let (input, path) = delimited(char('\"'), take_until("\""), char('\"'))(input)?;
+    let (input, path) = delimited(char('"'), take_until("\""), char('"'))(input)?;
     Ok((
         input,
         ImportType::Named(component.trim().to_owned(), path.to_owned()),
@@ -186,7 +181,7 @@ fn parse_whitespace(input: &str) -> IResult<&str, ()> {
     value((), multispace0)(input)
 }
 
-pub fn parse_markdown(input: &str) -> Result<Vec<ASTNode>, anyhow::Error> {
+pub fn parse_markdown(input: &str) -> Result<Vec<ASTNode>, AnyError> {
     let (_, nodes) = many0(delimited(
         parse_whitespace,
         alt((
@@ -242,56 +237,44 @@ pub async fn generate_html(
 
     for node in ast {
         match node {
-            ASTNode::Import(import_type) => {
-                // Collect import statements separately for later use
-                match import_type {
-                    ImportType::Named(component, path) => {
-                        imports.push(format!("import {{ {} }} from '{}';", component, path));
-                        react_components.extend(component.split(',').map(|s| s.trim().to_string()));
-                    }
-                    ImportType::Default(component, path) => {
-                        imports.push(format!("import {} from '{}';", component, path));
-                        react_components.push(component.to_string());
-                    }
+            ASTNode::Import(import_type) => match import_type {
+                ImportType::Named(component, path) => {
+                    imports.push(format!("import {{ {} }} from '{}';", component, path));
+                    react_components.extend(component.split(',').map(|s| s.trim().to_string()));
                 }
-            }
+                ImportType::Default(component, path) => {
+                    imports.push(format!("import {} from '{}';", component, path));
+                    react_components.push(component.to_string());
+                }
+            },
             ASTNode::Heading(level, content) => {
-                // Generate HTML for headings
                 html.push_str(&format!("<h{}>{}</h{}>\n", level, content, level));
             }
             ASTNode::Paragraph(content) => {
-                // Generate HTML for paragraphs
                 html.push_str(&format!("<p>{}</p>\n", content));
             }
             ASTNode::CodeBlock(content, lang) => {
-                // Generate HTML for code blocks
                 html.push_str(&format!(
                     "<pre><code className=\"language-{}\">{}</code></pre>\n",
                     lang, content
                 ));
             }
             ASTNode::Text(content) => {
-                // Generate plain text content
                 html.push_str(&format!("{}\n", content));
             }
             ASTNode::Strong(content) => {
-                // Generate HTML for strong/bold text
                 html.push_str(&format!("<strong>{}</strong>", content));
             }
             ASTNode::Emphasis(content) => {
-                // Generate HTML for emphasized/italic text
                 html.push_str(&format!("<em>{}</em>", content));
             }
             ASTNode::Code(content) => {
-                // Generate HTML for inline code
                 html.push_str(&format!("<code>{}</code>", content));
             }
             ASTNode::Link(text, url) => {
-                // Generate HTML for links
                 html.push_str(&format!("<a href=\"{}\">{}</a>", url, text));
             }
             ASTNode::Image(alt_text, url) => {
-                // Generate HTML for images
                 html.push_str(&format!("<img src=\"{}\" alt=\"{}\">", url, alt_text));
             }
             ASTNode::List(items) => {
@@ -302,24 +285,17 @@ pub async fn generate_html(
                 html.push_str("</ul>\n");
             }
             ASTNode::BlockQuote(content) => {
-                // Generate HTML for block quotes
                 html.push_str(&format!("<blockquote>{}</blockquote>\n", content));
             }
             ASTNode::ReactComponent(component_name) => {
-                // Track the React component and insert a placeholder in the HTML
                 if !react_components.contains(component_name) {
                     react_components.push(component_name.clone());
                 }
-                html.push_str(&format!(
-                    "<{} id=\"kaffe-{}\"></{}>\n",
-                    component_name, component_name, component_name
-                ));
+                html.push_str(&format!("<{}></{}>\n", component_name, component_name));
             }
-
-            ASTNode::Whitespace(val) => {}
+            ASTNode::Whitespace(_) => {}
         }
     }
 
-    // Return a tuple of HTML, imports, and react components
     Ok((html, imports, react_components))
 }

@@ -1,14 +1,15 @@
 import { useState } from "react";
 
-const fn = () => {
-  return <div>hello</div>;
+const fn = (click: number) => {
+  return <div>Button clicked: {click} times</div>;
 };
 
 const Home = () => {
   const [click, setClick] = useState(0);
 
   return (
-    <div onClick={() => console.log("clicked")}>
+    <div>
+      {fn(click)}
       <button onClick={() => setClick(click + 1)}>YAY</button>
     </div>
   );
