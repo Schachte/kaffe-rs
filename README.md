@@ -1,54 +1,69 @@
-## Background
+# kaffe
 
-Experimental static site generation engine for React built in Rust using V8 engine from Deno.
+**kaffe** is a transpiler that converts Markdown files with embedded React components into a static site. Written in Rust, **kaffe** offers a fast and efficient way to generate web content from Markdown, allowing you to integrate React components directly within your documents.
 
-My goal is to create a Markdown first SSG generation engine that accepts embedded React components for interactive components.
+## Features
 
-## How it works
+- **Transpilation:** Converts Markdown files into static HTML, processing any embedded React components.
+- **Rust Performance:** Built in Rust for speed and efficiency, ensuring quick processing times.
+- **Easy Integration:** Use React components seamlessly in your Markdown for enhanced interactivity.
+- **Static Site Generation:** Create a complete static site ready for deployment.
 
-This is a high-level overview of how the engine will run.
+## Getting Started
 
-### Markdown AST Generation
+Currently, this repo is built as a POC to prove the possibilities of working with React, V8 and Rust. You can find an example input inside of [./src/main.rs](./src/main.rs).
 
-The markdown piece is fairly trivial given the simplicity of the language itself. We need to parse the characters of the file and generate an AST to iterate over later. The iteration will allow us to create the `ASTNode` -> `Markdown HTML` mapping such as `## hello` -> `<h2>hello</h2>`.
+_Example Input_
 
-### Bundling & Dynamic HTML generation
-
-The complex piece of this is getting embedded React components to work within the Markdown, similar to MDX. Assume we have an example file such as:
-
-```jsx
+````markdown
+let markdown_input = r#"
 import Home from "./components/Home";
 
-# Welcome to My App
+<Home/>
 
-This is a paragraph.
+# hi
 
-<Home></Home>
+this is text
+
+## heading
+
+```javascript
+var x = 5;
 ```
 
-Clearly, this is non-traditional Markdown as we have a React component within. We need a way to resolve the import and also render the component itself to HTML. The way Kaffe handles this is a multi-step process.
+- hello
+- this is list
+- item aganin
+  "#;
+````
 
-1. Generate AST which will create nodes for imports, headings, react components, paragraphs, text, etc.
-2. Extract the React components
-3. Extract the import statements
-4. Dynamically generate a `.tsx/.jsx` React file with the imports and components within.
+_Example Output_
 
-Once we have this temp file of the react component(s), we can run it through a bundler to get a standard JS output file compatible for running through Node or V8 to extract the generated HTML. The HTML generation is being done through the help of `react-dom/server`, which is traditionally used for SSR (static site rendering).
+Note: The clientside bundle is automatically injected to support hydrating the DOM with interactivity powered by React.
 
-5. Run the output bundle through the V8 runtime - this will generate the HTML for us and assign to a global variable.
-6. Invoke the runtime by grabbing the HTML string we assigned to the global scope and output it to get the HTML
-
-### Example
-
-```
-let markdown_input = r#"
-   import Home from "./components/Home";
-   <Home/>
-"#;
-```
-
-_Invoke Kaffe_
-
-```
-<div><button>YAY</button><div>hello</div></div>
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{{TITLE}}</title>
+  </head>
+  <body>
+    <div id="root">
+      <div>
+        <button>YAY</button>
+      </div>
+      <h1>hi</h1>
+      <p>this is text ## heading</p>
+      <pre>
+        <code class="language-javascript">var x = 5;</code>
+      </pre>
+      <ul>
+        <li>hello</li>
+        <li>this is list</li>
+        <li>item again</li>
+      </ul>
+    </div>
+    <script type="module" src="/static/bundle.js"></script>
+  </body>
+</html>
 ```
