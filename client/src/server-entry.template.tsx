@@ -5,8 +5,8 @@ import ReactDOMServer from "react-dom/server";
 %{{ REPLACE_IMPORTS }}%
 
 (globalThis as any).renderToString = (location = "/") => {
+  const components = %{{ REPLACE_COMPONENTS }}%;
   return ReactDOMServer.renderToString(
-    const components = %{{ REPLACE_COMPONENTS }}%;
     <div id="root">%{{ REPLACE_CONTENT }}%</div>
   );
 };

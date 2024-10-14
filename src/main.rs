@@ -2,6 +2,7 @@ use actix_files as fs;
 use actix_web::Result;
 use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
+use std::fs::create_dir_all;
 use std::{fs as std_fs, io};
 
 use std::path::{Path, PathBuf};
@@ -29,6 +30,9 @@ struct Args {
 
     #[arg(short = 'b', long, default_value = "client/dist/components")]
     client_build_dir: String,
+
+    #[arg(short = 'o', long, default_value = "output")]
+    output_dir: PathBuf,
 }
 
 use kaffe::parser::{generate_html, parse_markdown};
@@ -37,6 +41,7 @@ async fn bundle_react_component(
     markdown_input: &str,
     client_component_dir: &str,
     client_build_dir: &str,
+    _file_name: &str,
 ) -> Result<String, anyhow::Error> {
     let parsed_nodes = match parse_markdown(markdown_input) {
         Ok(nodes) => nodes,
@@ -66,19 +71,26 @@ async fn bundle_react_component(
     let client_entry_content =
         client_entry_content.replace("%{{ REPLACE_CONTENT }}%", &html_content);
 
-    let file_path = "client/dist/server-entry.tsx";
-    let mut file = File::create(file_path)
-        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", file_path, e))?;
+    let output_dir = "client/dist";
 
-    file.write_all(server_entry_content.as_bytes())
-        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", file_path, e))?;
+    create_dir_all(output_dir)
+        .map_err(|e| anyhow!("Failed to create directory at {}: {:?}", output_dir, e))?;
 
-    let file_path = "client/dist/client-entry.tsx";
-    let mut file = File::create(file_path)
-        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", file_path, e))?;
+    // Write the server entry file
+    let server_file_path = format!("{}/server-entry.tsx", output_dir);
+    let mut server_file = File::create(&server_file_path)
+        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", server_file_path, e))?;
+    server_file
+        .write_all(server_entry_content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", server_file_path, e))?;
 
-    file.write_all(client_entry_content.as_bytes())
-        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", file_path, e))?;
+    // Write the client entry file
+    let client_file_path = format!("{}/client-entry.tsx", output_dir);
+    let mut client_file = File::create(&client_file_path)
+        .map_err(|e| anyhow!("Failed to create file at {}: {:?}", client_file_path, e))?;
+    client_file
+        .write_all(client_entry_content.as_bytes())
+        .map_err(|e| anyhow!("Failed to write to file at {}: {:?}", client_file_path, e))?;
 
     // The generated server/client entrypoints will need the components to exist relative to
     // the files, so we just copy them to the build dir
@@ -177,6 +189,17 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
+fn filename_from_path(filepath: &PathBuf) -> Result<String, String> {
+    let path = filepath.as_path();
+    if let Some(filename) = path.file_name() {
+        if let Some(filename_str) = filename.to_str() {
+            return Ok(filename_str.to_string());
+        }
+    }
+    println!("Err");
+    Err("No valid filename found.".to_string())
+}
+
 async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
         module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
@@ -186,10 +209,18 @@ async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let markdown_input = std_fs::read_to_string(&args.markdown_path)
         .map_err(|e| anyhow!("Failed to read markdown file: {:?}", e))?;
 
+    let md_filename = match filename_from_path(&args.markdown_path) {
+        Ok(filename) => filename,
+        Err(e) => format!("Error: {}", e),
+    };
+
+    println!("{} is filename", md_filename);
+
     let _ = bundle_react_component(
         &markdown_input,
         &args.client_component_directory,
         &args.client_build_dir,
+        &md_filename,
     )
     .await?;
 
@@ -205,6 +236,7 @@ async fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let final_html = template.replace("{{SSR_CONTENT}}", &rendered_html);
     let final_html = final_html.replace("{{CLIENT_BUNDLE_PATH}}", "bundle.js");
+    let final_html = final_html.replace("{{TITLE}}", &md_filename);
 
     std_fs::create_dir_all("output/static")?;
 
