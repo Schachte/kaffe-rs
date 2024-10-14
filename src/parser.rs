@@ -1,17 +1,18 @@
 use anyhow::anyhow;
-use std::{io::Write, path::Path, rc::Rc};
+use std::path::Path;
 
 use deno_core::{anyhow, error::AnyError, v8, JsRuntime};
-use tempfile::NamedTempFile;
 
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_until, take_while1},
-    character::complete::{char, multispace0, multispace1, newline},
-    combinator::{map, opt},
+    bytes::complete::{is_not, tag, take_until, take_while1},
+    character::complete::{
+        char, multispace0, multispace1, newline, none_of, one_of, space0, space1,
+    },
+    combinator::{eof, map, opt, peek, recognize, value},
     error::Error,
-    multi::many0,
-    sequence::delimited,
+    multi::{many0, many1},
+    sequence::{delimited, pair, preceded, terminated},
     IResult,
 };
 
@@ -22,6 +23,15 @@ pub enum ASTNode {
     ReactComponent(String),
     Paragraph(String),
     Text(String),
+    Strong(String),
+    Emphasis(String),
+    Code(String),
+    CodeBlock(String, String),
+    Link(String, String),
+    Image(String, String),
+    List(Vec<String>),
+    BlockQuote(String),
+    Whitespace(String),
 }
 
 #[derive(Debug)]
@@ -69,10 +79,85 @@ pub fn parse_heading(input: &str) -> IResult<&str, ASTNode> {
     Ok((input, ASTNode::Heading(level, content.trim().to_string())))
 }
 
+fn parse_inside_brackets(input: &str) -> IResult<&str, &str> {
+    delimited(char('['), is_not("]"), char(']'))(input)
+}
+
+fn parse_inside_parens(input: &str) -> IResult<&str, &str> {
+    delimited(char('('), is_not(")"), char(')'))(input)
+}
+
+fn parse_link(input: &str) -> IResult<&str, ASTNode> {
+    let (input, text) = parse_inside_brackets(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, url) = parse_inside_parens(input)?;
+    Ok((input, ASTNode::Link(text.to_string(), url.to_string())))
+}
+
+fn parse_image(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = char('!')(input)?;
+    let (input, alt_text) = parse_inside_brackets(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, url) = parse_inside_parens(input)?;
+    Ok((input, ASTNode::Image(alt_text.to_string(), url.to_string())))
+}
+
+fn parse_emphasis(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = char('*')(input)?;
+    let (input, text) = take_until("*")(input)?;
+    let (input, _) = char('*')(input)?;
+    Ok((input, ASTNode::Emphasis(text.to_string())))
+}
+
+fn parse_strong(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = tag("**")(input)?;
+    let (input, text) = take_until("**")(input)?;
+    let (input, _) = tag("**")(input)?;
+    Ok((input, ASTNode::Strong(text.to_string())))
+}
+
+fn parse_code(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = char('`')(input.trim())?;
+    let (input, code) = take_until("`")(input)?;
+    let (input, _) = char('`')(input)?;
+    Ok((input, ASTNode::Code(code.to_string())))
+}
+
+fn parse_list(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = many0(alt((tag("\n"), tag("\r\n"))))(input.trim())?;
+    let (input, items) = many1(parse_list_item)(input)?;
+    let (input, _) = many0(alt((tag("\n"), tag("\r\n"))))(input)?;
+    Ok((input, ASTNode::List(items)))
+}
+
+fn parse_list_item(input: &str) -> IResult<&str, String> {
+    let (input, _) = many0(alt((tag("\n"), tag("\r\n"))))(input)?;
+    let (input, _) = preceded(space0, alt((tag("- "), tag("* "))))(input)?;
+    let (input, item) = alt((
+        terminated(take_until("\n"), peek(alt((tag("\n"), tag("\r\n"))))),
+        recognize(many1(none_of("\n"))),
+    ))(input)?;
+    Ok((input, item.trim().to_string()))
+}
+
+fn parse_blockquote(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = char('>')(input)?;
+    let (input, _) = space0(input)?;
+    let (input, content) = take_until("\n")(input)?;
+    let (input, _) = newline(input)?;
+    Ok((input, ASTNode::BlockQuote(content.trim().to_string())))
+}
+
 pub fn parse_paragraph(input: &str) -> IResult<&str, ASTNode> {
     let (input, content) = take_until("\n\n")(input.trim())?;
     let (input, _) = opt(tag("\n\n"))(input)?;
-    Ok((input, ASTNode::Paragraph(content.trim().to_string())))
+    if content.starts_with("```") && content.ends_with("```") {
+        parse_code_block(content)
+    } else if content.starts_with("- ") || content.starts_with("* ") {
+        parse_list(content)
+    } else {
+        Ok((input, ASTNode::Paragraph(content.trim().to_string())))
+    }
 }
 
 pub fn parse_text(input: &str) -> IResult<&str, ASTNode> {
@@ -81,14 +166,46 @@ pub fn parse_text(input: &str) -> IResult<&str, ASTNode> {
     Ok((input, ASTNode::Text(content.trim().to_string())))
 }
 
+fn parse_code_block(input: &str) -> IResult<&str, ASTNode> {
+    let (input, _) = tag("```")(input)?;
+    let (input, lang) = opt(take_while1(|c: char| c.is_alphanumeric()))(input)?;
+    let (input, _) = opt(newline)(input)?;
+    let (input, code) = take_until("```")(input)?;
+    let (input, _) = tag("```")(input)?;
+    let (input, _) = opt(newline)(input)?;
+    Ok((
+        input,
+        ASTNode::CodeBlock(
+            code.to_string().trim().to_string(),
+            lang.unwrap_or("").to_string(),
+        ),
+    ))
+}
+
+fn parse_whitespace(input: &str) -> IResult<&str, ()> {
+    value((), multispace0)(input)
+}
+
 pub fn parse_markdown(input: &str) -> Result<Vec<ASTNode>, anyhow::Error> {
-    let (_, nodes) = many0(alt((
-        parse_import,
-        parse_heading,
-        parse_react_component,
-        parse_paragraph,
-        parse_text,
-    )))(input)
+    let (_, nodes) = many0(delimited(
+        parse_whitespace,
+        alt((
+            parse_import,
+            parse_code_block,
+            parse_heading,
+            parse_react_component,
+            parse_list,
+            parse_paragraph,
+            parse_text,
+            parse_code,
+            parse_emphasis,
+            parse_strong,
+            parse_link,
+            parse_image,
+            parse_blockquote,
+        )),
+        parse_whitespace,
+    ))(input)
     .map_err(|e| anyhow!("Failed to parse markdown: {:?}", e))?;
 
     Ok(nodes)
@@ -116,118 +233,93 @@ fn parse_react_component(input: &str) -> IResult<&str, ASTNode, Error<&str>> {
     Ok((input, ASTNode::ReactComponent(component_name.to_string())))
 }
 
-async fn run_js(
-    js_runtime: &mut JsRuntime,
-    file_path: &str,
-) -> Result<(), deno_core::anyhow::Error> {
-    let main_module = deno_core::resolve_path(file_path, Path::new(file_path))?;
-    let mod_id = js_runtime.load_main_es_module(&main_module).await?;
-    let result = js_runtime.mod_evaluate(mod_id);
-    js_runtime.run_event_loop(Default::default()).await?;
-    result.await?;
-    Ok(())
-}
-
-fn retrieve_rendered_page(
-    js_runtime: &mut JsRuntime,
-    function_name: &str,
-    argument: &str,
-) -> Result<String, AnyError> {
-    let script = format!("{}('{}');", function_name, argument);
-    let scope = &mut js_runtime.handle_scope();
-    let source = v8::String::new(scope, &script).unwrap();
-    let script = v8::Script::compile(scope, source, None).unwrap();
-    let result = script.run(scope).unwrap();
-    let result_str = result.to_string(scope).unwrap().to_rust_string_lossy(scope);
-    Ok(result_str)
-}
-
-pub async fn generate_html(ast: &[ASTNode]) -> Result<String, deno_core::anyhow::Error> {
+pub async fn generate_html(
+    ast: &[ASTNode],
+) -> Result<(String, Vec<String>, Vec<String>), anyhow::Error> {
     let mut html = String::new();
     let mut imports = Vec::new();
     let mut react_components = Vec::new();
 
     for node in ast {
         match node {
-            ASTNode::Import(import_type) => match import_type {
-                ImportType::Named(component, path) => {
-                    imports.push(format!("import {{ {} }} from '{}';", component, path));
-                    react_components.extend(component.split(',').map(|s| s.trim().to_string()));
+            ASTNode::Import(import_type) => {
+                // Collect import statements separately for later use
+                match import_type {
+                    ImportType::Named(component, path) => {
+                        imports.push(format!("import {{ {} }} from '{}';", component, path));
+                        react_components.extend(component.split(',').map(|s| s.trim().to_string()));
+                    }
+                    ImportType::Default(component, path) => {
+                        imports.push(format!("import {} from '{}';", component, path));
+                        react_components.push(component.to_string());
+                    }
                 }
-                ImportType::Default(component, path) => {
-                    imports.push(format!("import {} from '{}';", component, path));
-                    react_components.push(component.to_string());
-                }
-            },
+            }
             ASTNode::Heading(level, content) => {
+                // Generate HTML for headings
                 html.push_str(&format!("<h{}>{}</h{}>\n", level, content, level));
             }
             ASTNode::Paragraph(content) => {
+                // Generate HTML for paragraphs
                 html.push_str(&format!("<p>{}</p>\n", content));
             }
+            ASTNode::CodeBlock(content, lang) => {
+                // Generate HTML for code blocks
+                html.push_str(&format!(
+                    "<pre><code className=\"language-{}\">{}</code></pre>\n",
+                    lang, content
+                ));
+            }
             ASTNode::Text(content) => {
+                // Generate plain text content
                 html.push_str(&format!("{}\n", content));
             }
-            ASTNode::ReactComponent(component_name) => {
-                react_components.push(component_name.clone());
-                html.push_str(&format!("<div id=\"{}\" />", component_name));
+            ASTNode::Strong(content) => {
+                // Generate HTML for strong/bold text
+                html.push_str(&format!("<strong>{}</strong>", content));
             }
+            ASTNode::Emphasis(content) => {
+                // Generate HTML for emphasized/italic text
+                html.push_str(&format!("<em>{}</em>", content));
+            }
+            ASTNode::Code(content) => {
+                // Generate HTML for inline code
+                html.push_str(&format!("<code>{}</code>", content));
+            }
+            ASTNode::Link(text, url) => {
+                // Generate HTML for links
+                html.push_str(&format!("<a href=\"{}\">{}</a>", url, text));
+            }
+            ASTNode::Image(alt_text, url) => {
+                // Generate HTML for images
+                html.push_str(&format!("<img src=\"{}\" alt=\"{}\">", url, alt_text));
+            }
+            ASTNode::List(items) => {
+                html.push_str("<ul>\n");
+                for item in items {
+                    html.push_str(&format!("  <li>{}</li>\n", item));
+                }
+                html.push_str("</ul>\n");
+            }
+            ASTNode::BlockQuote(content) => {
+                // Generate HTML for block quotes
+                html.push_str(&format!("<blockquote>{}</blockquote>\n", content));
+            }
+            ASTNode::ReactComponent(component_name) => {
+                // Track the React component and insert a placeholder in the HTML
+                if !react_components.contains(component_name) {
+                    react_components.push(component_name.clone());
+                }
+                html.push_str(&format!(
+                    "<{} id=\"kaffe-{}\"></{}>\n",
+                    component_name, component_name, component_name
+                ));
+            }
+
+            ASTNode::Whitespace(val) => {}
         }
     }
 
-    let import_string = imports.join("\n");
-    let react_component_string = react_components.join(", ");
-
-    let script = format!(
-        r#"
-        {import_string}
-        import React from "react";
-        import ReactDOMServer from "react-dom/server";
-
-        const components = {{ {react_component_string} }};
-
-        // Expose the renderToString function globally
-        (globalThis).renderToString = (location = "/") => {{
-            const content = Object.entries(components).map(([name, Component]) => {{
-                return `<div id="${{name}}-ssr">${{
-                    ReactDOMServer.renderToString(<Component />)
-                }}</div>`;
-            }}).join('');
-
-            return `
-                <div id="root">
-                    {html}
-                    ${{content}}
-                </div>
-            `;
-        }};
-        "#,
-        import_string = import_string,
-        react_component_string = react_component_string,
-        html = html
-    );
-
-    let mut js_runtime = JsRuntime::new(deno_core::RuntimeOptions {
-        module_loader: Some(Rc::new(deno_core::FsModuleLoader)),
-        ..Default::default()
-    });
-
-    // Write the script to a temporary file
-    let mut temp_file = NamedTempFile::new()?;
-    temp_file.write_all(script.as_bytes())?;
-
-    // Run the script using Deno's V8 runtime
-    run_js(&mut js_runtime, temp_file.path().to_str().unwrap()).await?;
-
-    // Retrieve the rendered HTML for each React component
-    for component_name in react_components {
-        let rendered_html =
-            retrieve_rendered_page(&mut js_runtime, "renderReactComponent", &component_name)?;
-        html = html.replace(
-            &format!("<div id=\"{}\" />", component_name),
-            &rendered_html,
-        );
-    }
-
-    Ok(html)
+    // Return a tuple of HTML, imports, and react components
+    Ok((html, imports, react_components))
 }
