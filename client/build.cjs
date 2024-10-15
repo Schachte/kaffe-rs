@@ -3,6 +3,7 @@ const {
 } = require("esbuild-plugins-node-modules-polyfill");
 const esbuild = require("esbuild");
 const path = require("path");
+const cssPlugin = require("esbuild-css-modules-plugin");
 
 const outputName = process.argv[2] || "bundle";
 
@@ -13,10 +14,18 @@ esbuild
     bundle: true,
     outfile: `client/dist/${outputName}`,
     minify: true,
-    sourcemap: true,
+    sourcemap: false,
     target: ["es2015"],
     define: { "process.env.NODE_ENV": '"development"' },
     format: "esm",
+    plugins: [
+      cssPlugin({
+        force: true,
+        emitDeclarationFile: true,
+        localsConvention: "camelCaseOnly",
+        inject: false,
+      }),
+    ],
   })
   .catch(() => process.exit(1));
 

@@ -33,6 +33,12 @@ pub enum ASTNode {
 pub enum ImportType {
     Named(String, String),
     Default(String, String),
+    Bare(String),
+}
+
+fn parse_bare_import(input: &str) -> IResult<&str, ImportType> {
+    let (input, path) = delimited(char('"'), take_until("\""), char('"'))(input)?;
+    Ok((input, ImportType::Bare(path.to_owned())))
 }
 
 fn parse_default_import(input: &str) -> IResult<&str, ImportType> {
@@ -61,7 +67,8 @@ fn parse_named_import(input: &str) -> IResult<&str, ImportType> {
 fn parse_import(input: &str) -> IResult<&str, ASTNode> {
     let (input, _) = tag("import")(input.trim())?;
     let (input, _) = multispace1(input)?;
-    let (input, import_type) = alt((parse_default_import, parse_named_import))(input)?;
+    let (input, import_type) =
+        alt((parse_bare_import, parse_default_import, parse_named_import))(input)?;
     let (input, _) = opt(char(';'))(input)?;
     Ok((input, ASTNode::Import(import_type)))
 }
@@ -244,7 +251,11 @@ pub async fn generate_html(
                     imports.push(format!("import {} from '{}';", component, path));
                     react_components.push(component.to_string());
                 }
+                ImportType::Bare(path) => {
+                    imports.push(format!("import '{}';", path));
+                }
             },
+
             ASTNode::Heading(level, content) => {
                 html.push_str(&format!("<h{}>{}</h{}>\n", level, content, level));
             }
