@@ -1,0 +1,16 @@
+**Priority of work**
+
+☐ Need to support some notion of generating static props during build time only and injecting into the JSX before bundling the server bundle
+☐ Embed the following files into Kaffe so there isn't any dependency on a client directory
+    ☐ build.cjs
+    ☐ polyfills/*
+    ☐ template.html
+    ☐ client-entry.template.tsx
+    ☐ server-entry.template.tsx
+☐ Enable option for the user to supply their own entry files if needed
+☐ Fix any bugs + add tests for Markdown AST + code generation
+☐ Add a simple way of validating JSX after Markdown HTML generation, but rely on esbuild to do the transformation of JSX -> HTML
+☐ Implement a way to copy project files in tmp/ dir from users directory so relative paths match correctly when doing bundle generation
+☐ Allow template.html to be supplied by the user
+☐ Look into code splitting + manifest creation to support multiple bundles in a single file to reduce amount of JS/data passed in each request
+
